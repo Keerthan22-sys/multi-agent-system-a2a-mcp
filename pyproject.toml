@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "multi-agent-system-a2a-mcp"
+version = "0.1.0"
+description = "SYNAPSE: multi-agent context-aware reports via FastMCP and a local post-office protocol"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+  "fastmcp>=2.0",
+  "python-dotenv>=1.0",
+  "openai>=1.55",
+  "requests>=2.31",
+  "streamlit>=1.39",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["synapse*"]

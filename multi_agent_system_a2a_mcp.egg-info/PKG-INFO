@@ -1,0 +1,11 @@
+Metadata-Version: 2.4
+Name: multi-agent-system-a2a-mcp
+Version: 0.1.0
+Summary: SYNAPSE: multi-agent context-aware reports via FastMCP and a local post-office protocol
+Requires-Python: >=3.10
+Description-Content-Type: text/markdown
+Requires-Dist: fastmcp>=2.0
+Requires-Dist: python-dotenv>=1.0
+Requires-Dist: openai>=1.55
+Requires-Dist: requests>=2.31
+Requires-Dist: streamlit>=1.39
