@@ -1,1 +1,62 @@
-[]
+[
+  {
+    "sender": "contextualist",
+    "recipient": "scout",
+    "task_id": "task-1",
+    "status": "done",
+    "payload": {
+      "topic": "Last week's new developments in AI field that a AI Engineer should be aware off",
+      "news_headline": null,
+      "location": {
+        "city": "Washington, D.C.",
+        "weather": "20.78\u00b0C, overcast clouds"
+      },
+      "financial_context": {
+        "currency_code": "USD",
+        "rate": 1,
+        "source": "ExchangeRate API"
+      }
+    },
+    "timestamp": "2026-05-10T21:34:43.386971Z"
+  },
+  {
+    "sender": "scout",
+    "recipient": "publisher",
+    "task_id": "task-1",
+    "status": "done",
+    "payload": {
+      "topic": "Last week's new developments in AI field that a AI Engineer should be aware off",
+      "location": "Washington, D.C.",
+      "context": {
+        "topic": "Last week's new developments in AI field that a AI Engineer should be aware off",
+        "news_headline": null,
+        "location": {
+          "city": "Washington, D.C.",
+          "weather": "20.78\u00b0C, overcast clouds"
+        },
+        "financial_context": {
+          "currency_code": "USD",
+          "rate": 1,
+          "source": "ExchangeRate API"
+        }
+      },
+      "media": {
+        "query": "Last week's new developments in AI field that a AI Engineer should be aware off",
+        "images": [
+          {
+            "id": 30869149,
+            "url": "https://www.pexels.com/photo/ai-news-concept-with-scrabble-letters-30869149/",
+            "photographer": "Markus Winkler",
+            "alt": "Wooden Scrabble tiles spelling 'AI' and 'NEWS' for a tech concept image.",
+            "src": {
+              "url": "https://images.pexels.com/photos/30869149/pexels-photo-30869149.jpeg?auto=compress&cs=tinysrgb&h=650&w=940",
+              "type": "image"
+            }
+          }
+        ],
+        "total_results": 8000
+      }
+    },
+    "timestamp": "2026-05-10T21:34:44.071232Z"
+  }
+]
