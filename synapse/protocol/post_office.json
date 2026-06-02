@@ -9,7 +9,7 @@
       "news_headline": "Show HN: Simple news aggregator with source bias meters",
       "location": {
         "city": "Bangkok",
-        "weather": "28.84\u00b0C, overcast clouds"
+        "weather": "28.28\u00b0C, overcast clouds"
       },
       "financial_context": {
         "currency_code": "THB",
@@ -17,7 +17,7 @@
         "source": "ExchangeRate API"
       }
     },
-    "timestamp": "2026-06-02T19:01:46.895144Z"
+    "timestamp": "2026-06-02T19:14:40.561922Z"
   },
   {
     "sender": "scout",
@@ -32,7 +32,7 @@
         "news_headline": "Show HN: Simple news aggregator with source bias meters",
         "location": {
           "city": "Bangkok",
-          "weather": "28.84\u00b0C, overcast clouds"
+          "weather": "28.28\u00b0C, overcast clouds"
         },
         "financial_context": {
           "currency_code": "THB",
@@ -60,25 +60,17 @@
         "query": "K-pop tour in Bangkok",
         "briefs": [
           {
-            "brief_id": "brief-a68ec79a",
-            "topic": "India chip manufacturing subsidies",
-            "city": "New Delhi",
-            "created_at": "2026-06-02T19:01:20.255213+00:00",
-            "article_snippet": "Headline: Intel and 3DGS back $3.3 billion glass-substrate plant in Odisha, spotlight on India\u2019s chip subsidies\n\nNew Delhi \u2014 The latest investment underscores India's push to expand chip manufacturing, with Intel and 3D Global Solutions (3DGS) backing a $3.3 billion glass-substrate facility in Odisha. The project aligns with broader policy efforts to attract semiconductor production, though specif",
-            "distance": 1.8091037273406982
-          },
-          {
-            "brief_id": "brief-b52237d2",
-            "topic": "Indian semiconductor policy 2026",
-            "city": "New Delhi",
-            "created_at": "2026-06-02T19:00:46.519462+00:00",
-            "article_snippet": "Headline: FinMin report preserves industrial momentum, policy context for 2026 semiconductor push remains in focus\n\nNew Delhi \u2014 A Finance Ministry briefing notes that momentum in India's industrial sector remains intact and is expected to receive a further boost, a development that aligns with ongoing discussions around the 2026 Indian semiconductor policy. The headline indication comes as policym",
-            "distance": 1.8492488861083984
+            "brief_id": "brief-df022254",
+            "topic": "K-pop tour in Bangkok",
+            "city": "Bangkok",
+            "created_at": "2026-06-02T19:13:43.978494+00:00",
+            "article_snippet": "Headline: K-pop Tour Lights Up Bangkok, Details Remain Limited\n\nA K-pop tour event in Bangkok is drawing attention as fans await official details on dates and venues. Observers note growing interest in the energized pop scene, though organizers have not released further information at this time.\n\nIndustry watchers say Bangkok remains a key city for international tours in Southeast Asia, with antic",
+            "distance": 0.19818860292434692
           }
         ],
-        "count": 2
+        "count": 1
       }
     },
-    "timestamp": "2026-06-02T19:01:47.877184Z"
+    "timestamp": "2026-06-02T19:14:40.803973Z"
   }
 ]

@@ -98,7 +98,7 @@ with st.sidebar:
                 if st.button(
                     f"📄 {label_topic}",
                     key=b["brief_id"],
-                    use_container_width=True,
+                    width='stretch',
                     help=f"Created: {b.get('created_at', '?')}\nCity: {b.get('city', '?')}",
                 ):
                     st.session_state["viewing_brief"] = b["brief_id"]
@@ -144,7 +144,7 @@ if st.button("Generate Report", type="primary"):
     try:
         image_url = scout_data["media"]["images"][0]["src"]["url"]
         if image_url:
-            st.image(image_url, caption="Related Image", use_container_width=True)
+            st.image(image_url, caption="Related Image", width='stretch')
     except Exception:
         pass
 

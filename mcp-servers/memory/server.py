@@ -25,7 +25,10 @@ chroma_client = chromadb.PersistentClient(
 
 collection = chroma_client.get_or_create_collection(
     name="synapse_briefs",
-    metadata={"description": "Stored daily briefs for semantic recall across runs."},
+    metadata={
+        "description": "Stored daily briefs for semantic recall across runs.",
+        "hnsw:space": "cosine"  # ← add this
+    },
 )
 
 
@@ -43,7 +46,7 @@ def _safe_truncate(text: str, limit: int) -> str:
         return ""
     return text if len(text) <= limit else text[:limit]
 
-MEMORY_DISTANCE_THRESHOLD = 1.0
+MEMORY_DISTANCE_THRESHOLD = 0.7
 
 # ---------- Tools ----------
 
@@ -89,7 +92,8 @@ def store_brief(topic: str, article: str, payload: dict, city: str = "") -> dict
 def search_briefs(query: str, k: int = 3) -> dict:
     """
     Semantic search across all stored briefs.
-    Returns up to k briefs most relevant to the query.
+    Returns up to k briefs most relevant to the query,
+    filtered by a distance threshold so unrelated topics return nothing.
     """
     total = collection.count()
     if total == 0:
@@ -101,12 +105,18 @@ def search_briefs(query: str, k: int = 3) -> dict:
         n_results=n_results,
     )
 
-    briefs = []
     ids = results.get("ids", [[]])[0]
     metas = results.get("metadatas", [[]])[0]
     dists = results.get("distances", [[]])[0]
 
+    briefs = []
     for i, brief_id in enumerate(ids):
+        distance = float(dists[i]) if i < len(dists) else 999.0
+
+        # ← The fix: skip results that are too far away to be meaningful
+        if distance > MEMORY_DISTANCE_THRESHOLD:
+            continue
+
         meta = metas[i] if i < len(metas) else {}
         briefs.append({
             "brief_id": brief_id,
@@ -114,7 +124,7 @@ def search_briefs(query: str, k: int = 3) -> dict:
             "city": meta.get("city"),
             "created_at": meta.get("created_at"),
             "article_snippet": _safe_truncate(meta.get("article", ""), 400),
-            "distance": float(dists[i]) if i < len(dists) else None,
+            "distance": distance,
         })
 
     return {"query": query, "briefs": briefs, "count": len(briefs)}
