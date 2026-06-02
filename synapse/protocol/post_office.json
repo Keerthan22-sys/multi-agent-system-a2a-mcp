@@ -5,19 +5,19 @@
     "task_id": "task-1",
     "status": "done",
     "payload": {
-      "topic": "Last week's new developments in AI field that a AI Engineer should be aware off",
-      "news_headline": null,
+      "topic": "K-pop tour in Bangkok",
+      "news_headline": "Show HN: Simple news aggregator with source bias meters",
       "location": {
-        "city": "Washington, D.C.",
-        "weather": "20.78\u00b0C, overcast clouds"
+        "city": "Bangkok",
+        "weather": "28.84\u00b0C, overcast clouds"
       },
       "financial_context": {
-        "currency_code": "USD",
-        "rate": 1,
+        "currency_code": "THB",
+        "rate": 0.03067,
         "source": "ExchangeRate API"
       }
     },
-    "timestamp": "2026-05-10T21:34:43.386971Z"
+    "timestamp": "2026-06-02T19:01:46.895144Z"
   },
   {
     "sender": "scout",
@@ -25,38 +25,60 @@
     "task_id": "task-1",
     "status": "done",
     "payload": {
-      "topic": "Last week's new developments in AI field that a AI Engineer should be aware off",
-      "location": "Washington, D.C.",
+      "topic": "K-pop tour in Bangkok",
+      "location": "Bangkok",
       "context": {
-        "topic": "Last week's new developments in AI field that a AI Engineer should be aware off",
-        "news_headline": null,
+        "topic": "K-pop tour in Bangkok",
+        "news_headline": "Show HN: Simple news aggregator with source bias meters",
         "location": {
-          "city": "Washington, D.C.",
-          "weather": "20.78\u00b0C, overcast clouds"
+          "city": "Bangkok",
+          "weather": "28.84\u00b0C, overcast clouds"
         },
         "financial_context": {
-          "currency_code": "USD",
-          "rate": 1,
+          "currency_code": "THB",
+          "rate": 0.03067,
           "source": "ExchangeRate API"
         }
       },
       "media": {
-        "query": "Last week's new developments in AI field that a AI Engineer should be aware off",
+        "query": "K-pop tour in Bangkok",
         "images": [
           {
-            "id": 30869149,
-            "url": "https://www.pexels.com/photo/ai-news-concept-with-scrabble-letters-30869149/",
-            "photographer": "Markus Winkler",
-            "alt": "Wooden Scrabble tiles spelling 'AI' and 'NEWS' for a tech concept image.",
+            "id": 24498511,
+            "url": "https://www.pexels.com/photo/modern-buildings-in-the-city-with-neon-billboards-24498511/",
+            "photographer": "Elina Volkova",
+            "alt": "Busy urban street scene with colorful illuminated billboard at night.",
             "src": {
-              "url": "https://images.pexels.com/photos/30869149/pexels-photo-30869149.jpeg?auto=compress&cs=tinysrgb&h=650&w=940",
+              "url": "https://images.pexels.com/photos/24498511/pexels-photo-24498511.jpeg?auto=compress&cs=tinysrgb&h=650&w=940",
               "type": "image"
             }
           }
         ],
         "total_results": 8000
+      },
+      "memory_context": {
+        "query": "K-pop tour in Bangkok",
+        "briefs": [
+          {
+            "brief_id": "brief-a68ec79a",
+            "topic": "India chip manufacturing subsidies",
+            "city": "New Delhi",
+            "created_at": "2026-06-02T19:01:20.255213+00:00",
+            "article_snippet": "Headline: Intel and 3DGS back $3.3 billion glass-substrate plant in Odisha, spotlight on India\u2019s chip subsidies\n\nNew Delhi \u2014 The latest investment underscores India's push to expand chip manufacturing, with Intel and 3D Global Solutions (3DGS) backing a $3.3 billion glass-substrate facility in Odisha. The project aligns with broader policy efforts to attract semiconductor production, though specif",
+            "distance": 1.8091037273406982
+          },
+          {
+            "brief_id": "brief-b52237d2",
+            "topic": "Indian semiconductor policy 2026",
+            "city": "New Delhi",
+            "created_at": "2026-06-02T19:00:46.519462+00:00",
+            "article_snippet": "Headline: FinMin report preserves industrial momentum, policy context for 2026 semiconductor push remains in focus\n\nNew Delhi \u2014 A Finance Ministry briefing notes that momentum in India's industrial sector remains intact and is expected to receive a further boost, a development that aligns with ongoing discussions around the 2026 Indian semiconductor policy. The headline indication comes as policym",
+            "distance": 1.8492488861083984
+          }
+        ],
+        "count": 2
       }
     },
-    "timestamp": "2026-05-10T21:34:44.071232Z"
+    "timestamp": "2026-06-02T19:01:47.877184Z"
   }
 ]
