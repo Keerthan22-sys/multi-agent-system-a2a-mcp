@@ -17,7 +17,8 @@ trap 'kill 0' EXIT
 python mcp-servers/world-data/server.py &
 python mcp-servers/finance-monitor/server.py &
 python mcp-servers/media-engine/server.py &
-python mcp-servers/memory/server.py &        # NEW: Day 3 — persistent memory
+python mcp-servers/memory/server.py &         # Day 3
+python mcp-servers/conversation/server.py &   # NEW: Day 4
 
 # Agents
 python agents/contextualist_agent/main.py &
