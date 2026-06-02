@@ -1,4 +1,4 @@
-# Task 8 + 12: Build Scout Agent — now with memory retrieval (Day 3).
+# Task 8 + 12 + 14: Scout Agent — now Router-aware (Day 5).
 import asyncio
 import json
 import time
@@ -6,19 +6,15 @@ from fastmcp import FastMCP, Client
 from contextlib import AsyncExitStack
 from synapse.protocol.post_office import send_message, read_messages, clear_messages
 
-# Initialize the MCP server for the Scout agent
 mcp = FastMCP("Scout Agent")
 
-# MCP endpoints for downstream agents
 CONTEXTUALIST_URL = "http://0.0.0.0:8000/mcp"
 MEDIA_URL = "http://0.0.0.0:8003/mcp"
-MEMORY_URL = "http://0.0.0.0:8006/mcp"  # NEW: memory MCP server
+MEMORY_URL = "http://0.0.0.0:8006/mcp"      # Day 3
+ROUTER_URL = "http://0.0.0.0:8008/mcp"      # NEW: Day 5
 
 
 def wait_for_response(task_id: str, timeout: int = 10):
-    """
-    Poll the post office for a response matching the given task ID.
-    """
     start = time.time()
     while time.time() - start < timeout:
         messages = read_messages()
@@ -29,67 +25,84 @@ def wait_for_response(task_id: str, timeout: int = 10):
     return None
 
 
+# Fail-safe default if the router is unreachable
+_ROUTING_DEFAULT = {
+    "use_news": True,
+    "use_weather": True,
+    "use_fx": True,
+    "use_media": True,
+    "reasoning": "Router unavailable; defaulted to all tools.",
+}
+
+
 @mcp.tool
 async def scout(topic: str, city: str, task_id: str = "task-1"):
     """
-    Aggregate contextual, media, and memory signals for a given topic and city.
+    Orchestrate context, media, and memory — now routed dynamically by the Router agent.
     """
-    # Clear old messages to avoid mixing responses
     clear_messages()
 
-    # Manage multiple MCP clients safely
     async with AsyncExitStack() as stack:
-        contextualist_client = await stack.enter_async_context(
-            Client(CONTEXTUALIST_URL)
-        )
-        media_client = await stack.enter_async_context(Client(MEDIA_URL))
-
-        # NEW: connect to the memory server (best-effort — failures shouldn't kill the run)
-        memory_client = None
+        # 1. Ask the Router which tools to invoke for this topic
+        routing = dict(_ROUTING_DEFAULT)
         try:
-            memory_client = await stack.enter_async_context(Client(MEMORY_URL))
+            router_client = await stack.enter_async_context(Client(ROUTER_URL))
+            r = await router_client.call_tool("route_tools", {"topic": topic})
+            if isinstance(r.data, dict):
+                routing.update(r.data)
         except Exception as e:
-            print(f"[scout] Memory server unavailable: {e}")
+            print(f"[scout] Router unavailable, using defaults: {e}")
 
-        # Send a contextualization request
+        # 2. Hand routing flags to the Contextualist
+        contextualist_client = await stack.enter_async_context(Client(CONTEXTUALIST_URL))
         await contextualist_client.call_tool(
             "contextualize",
-            {"topic": topic, "city": city, "task_id": task_id},
+            {
+                "topic": topic,
+                "city": city,
+                "task_id": task_id,
+                "use_news": routing["use_news"],
+                "use_weather": routing["use_weather"],
+                "use_fx": routing["use_fx"],
+            },
         )
-
-        # Wait for the contextualist response via the post office
         response = wait_for_response(task_id)
         context = response["payload"] if response else {}
 
-        # Fetch related media assets
-        media_res = await media_client.call_tool(
-            "search_images",
-            {"query": topic, "per_page": 1},
-        )
-        media = media_res.data
-
-        # NEW: query memory for relevant past briefs (best-effort)
-        memory_context = {"briefs": [], "count": 0}
-        if memory_client is not None:
+        # 3. Conditionally fetch media
+        media = {}
+        if routing["use_media"]:
             try:
-                mem_res = await memory_client.call_tool(
-                    "search_briefs",
-                    {"query": topic, "k": 3},
+                media_client = await stack.enter_async_context(Client(MEDIA_URL))
+                media_res = await media_client.call_tool(
+                    "search_images",
+                    {"query": topic, "per_page": 1},
                 )
-                memory_context = mem_res.data
+                media = media_res.data
             except Exception as e:
-                print(f"[scout] Memory query failed: {e}")
+                print(f"[scout] Media fetch failed: {e}")
 
-    # Combine all signals into one final object
+        # 4. Memory is always queried — it's local and cheap
+        memory_context = {"briefs": [], "count": 0}
+        try:
+            memory_client = await stack.enter_async_context(Client(MEMORY_URL))
+            mem_res = await memory_client.call_tool(
+                "search_briefs",
+                {"query": topic, "k": 3},
+            )
+            memory_context = mem_res.data
+        except Exception as e:
+            print(f"[scout] Memory query failed: {e}")
+
     final_signal = {
         "topic": topic,
         "location": city,
         "context": context,
         "media": media,
-        "memory_context": memory_context,  # NEW
+        "memory_context": memory_context,
+        "routing_decision": routing,  # NEW: ride-along for UI observability
     }
 
-    # Send the aggregated signal to the Publisher agent
     send_message({
         "sender": "scout",
         "recipient": "publisher",
