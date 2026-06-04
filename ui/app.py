@@ -105,7 +105,8 @@ for key, default in [
     ("city", ""),
     ("routing_decision", None),     # NEW
     ("pending_pivot", None),        # NEW
-    ("new_brief_topic", ""),        # topic field for "Start a new brief" (widget key)
+    ("new_brief_topic", ""),        # widget key for Topic input
+    ("topic_prefill", None),        # one-shot value applied before widget mounts
 ]:
     if key not in st.session_state:
         st.session_state[key] = default
@@ -143,7 +144,7 @@ def _reset_session(keep_prefilled_topic: str = ""):
     st.session_state["city"] = ""
     st.session_state["routing_decision"] = None
     st.session_state["pending_pivot"] = None
-    st.session_state["new_brief_topic"] = keep_prefilled_topic
+    st.session_state["topic_prefill"] = keep_prefilled_topic
 
 
 def _format_routing_line(routing: dict) -> str:
@@ -218,7 +219,10 @@ with st.sidebar:
 
 if st.session_state["active_conversation_id"] is None:
     st.subheader("Start a new brief")
-    # Use session_state + key so the value survives reruns (e.g. on Generate click).
+    # Apply prefill before the widget mounts (cannot set widget key after text_input).
+    if st.session_state["topic_prefill"] is not None:
+        st.session_state["new_brief_topic"] = st.session_state["topic_prefill"]
+        st.session_state["topic_prefill"] = None
     topic = st.text_input("Topic", key="new_brief_topic")
 
     try:
@@ -263,7 +267,6 @@ if st.session_state["active_conversation_id"] is None:
             st.session_state["initial_image_url"] = None
         conv = get_conversation(pub_data["conversation_id"])
         st.session_state["turns"] = conv.get("turns", [])
-        st.session_state["new_brief_topic"] = ""
         st.rerun()
 
 else:
@@ -318,7 +321,7 @@ else:
         cols = st.columns(2)
         if cols[0].button("✨ Start fresh brief", type="primary", use_container_width=True):
             new_topic = pivot["suggested_topic"] or pivot["message"]
-            _reset_session(keep_prefilled_topic=new_topic)  # sets new_brief_topic
+            _reset_session(keep_prefilled_topic=new_topic)
             st.rerun()
         if cols[1].button("💬 Continue here anyway", use_container_width=True):
             # Treat the held message as a follow-up
