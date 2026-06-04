@@ -1,6 +1,6 @@
 # SYNAPSE — Multi-agent context-aware reports (A2A + MCP)
 
-This project wires several **FastMCP** servers together: lightweight "tool" servers (news, weather, FX, images, persistent memory, and conversation state) feed **agents** that coordinate through a tiny file-based mailbox (**post office** under `synapse/protocol/`). A **Streamlit** UI triggers the Scout and Publisher tools to produce an article grounded in aggregated signals — recalls prior coverage via semantic memory and supports multi-turn follow-up conversations on every brief.
+This project wires several **FastMCP** servers together: lightweight "tool" servers (news, weather, FX, images, persistent memory, conversation state, and an LLM-powered router) feed **agents** that coordinate through a tiny file-based mailbox (**post office** under `synapse/protocol/`). A **Streamlit** UI triggers the Scout and Publisher tools to produce an article grounded in aggregated signals — with dynamic tool selection per topic and intent-aware follow-up routing in conversations.
 
 ## Architecture
 
@@ -12,6 +12,7 @@ flowchart LR
     ME[media-engine :8003]
     MEM[memory :8006]
     CONV[conversation :8007]
+    RT[router :8008]
   end
   subgraph agents [Agents]
     CTX[contextualist :8000]
@@ -20,6 +21,7 @@ flowchart LR
   end
   UI[Streamlit ui/app.py]
   PO[(post_office.json)]
+  RT --> SC
   WD --> CTX
   FM --> CTX
   CTX --> PO
@@ -33,6 +35,7 @@ flowchart LR
   PUB --> UI
   MEM --> UI
   CONV --> UI
+  RT --> UI
 ```
 
 - **world-data** — NewsAPI headline search and OpenWeather current conditions.
@@ -40,45 +43,45 @@ flowchart LR
 - **media-engine** — Pexels image search.
 - **memory** — Persistent semantic store backed by ChromaDB. Stores finished briefs and exposes cosine-similarity search so agents can recall related prior coverage.
 - **conversation** — Stores multi-turn conversation state in a JSON file. Tracks every user question and assistant reply tied to a brief.
-- **contextualist** — Calls world-data and finance-monitor, merges a structured signal, writes to the post office for the scout.
-- **scout** — Drives contextualist and media-engine, queries the memory server for related past briefs, merges all signals for the Publisher.
-- **publisher** — Generates the initial brief (augmented by past-brief context from memory), seeds a conversation record, and handles follow-up questions grounded in the original payload and conversation history.
+- **router** — LLM-powered routing server. Decides which tool servers are relevant for a given topic and classifies follow-up messages as continued conversation or a pivot to a new topic.
+- **contextualist** — Calls world-data and finance-monitor based on routing flags, merges a structured signal, writes to the post office for the scout.
+- **scout** — Asks the router which tools to invoke, drives contextualist and media-engine conditionally, queries memory, and merges all signals for the Publisher.
+- **publisher** — Generates the initial brief (augmented by memory context), seeds a conversation record, and handles follow-up questions.
 
 Root-level `server.py` and `agent.py` are commented FastMCP examples only; they are not part of the running stack.
 
 ## What's new in this branch
 
-### Multi-turn conversation state (`mcp-servers/conversation/`)
+### LLM-powered Router (`mcp-servers/router/`)
 
-A new FastMCP server at port **8007** stores conversation threads in `synapse/conversations/conversations.json`. It exposes five tools:
+A new FastMCP server at port **8008** makes dynamic routing decisions using the OpenAI chat API in JSON mode. It exposes two tools:
 
 | Tool | Description |
 |------|-------------|
-| `start_conversation` | Begin a new conversation seeded with the initial brief's article and payload. Returns a `conversation_id`. |
-| `add_turn` | Append a single turn (`user` or `assistant`) to an existing conversation. |
-| `get_conversation` | Return the full conversation record: metadata, initial payload, and all turns. |
-| `list_conversations` | Return recent conversations in reverse-chronological order (metadata only, no turns). |
-| `delete_conversation` | Remove a conversation (useful during development). |
+| `route_tools` | Given a topic, decides which tool servers (news, weather, FX, media) are relevant. Returns boolean flags and a one-sentence rationale. Fails safe — enables all tools if the LLM call fails. |
+| `route_intent` | Given a chat message and recent conversation turns, classifies the message as a `follow_up` (elaborates on the current topic) or a `pivot` (new topic needing a fresh brief). Returns intent, confidence score, a suggested topic for pivots, and a rationale. Fails safe — defaults to `follow_up`. |
 
-### Conversation-aware Publisher Agent
+### Dynamic tool selection in the Scout and Contextualist
 
-The Publisher now exposes two tools:
+Before each pipeline run, the Scout calls `route_tools` and passes the resulting boolean flags (`use_news`, `use_weather`, `use_fx`) to the Contextualist. The Contextualist only opens MCP clients and makes API calls for the enabled tools, skipping the rest. The `tools_used` and `tools_skipped` lists are returned on the signal so the UI can surface them. Media fetching in the Scout is similarly gated on the `use_media` flag. The `routing_decision` dict rides along in the final payload for full observability.
 
-- **`publish_brief`** — generates the initial article (informed by `memory_context` from the Scout), stores it in memory, and seeds a new conversation via the conversation server.
-- **`follow_up`** — answers follow-up questions within an existing conversation. It fetches the conversation's original payload and turn history, builds a grounded prompt, appends the user's question, calls the LLM, and appends the reply — all without re-running the Scout pipeline. Up to the last 10 turns are included in the prompt (`MAX_TURNS_IN_PROMPT`).
+### Intent-aware follow-up in the UI
 
-### Chat-shaped Streamlit UI
+When the user types a message in conversation mode, the UI first calls `route_intent`. If the router returns `pivot` with confidence ≥ 0.70 (`PIVOT_CONFIDENCE_THRESHOLD`), the UI pauses and shows a confirmation prompt:
 
-The UI is now structured around conversations rather than one-shot report generation:
+- **Start fresh brief** — resets the session and pre-fills the topic input with the router's suggested topic.
+- **Continue here anyway** — treats the message as a follow-up regardless.
 
-- **Conversations sidebar** — lists all past conversations with turn counts; clicking one loads it into the chat view.
-- **New brief mode** — enter a topic, click **Generate Brief**; the pipeline runs and the UI automatically transitions to conversation mode.
-- **Conversation mode** — renders all turns as chat bubbles (using `st.chat_message`), shows the related image with the first assistant reply, and accepts follow-up questions via `st.chat_input`.
-- **Past Briefs sidebar** — retained from the memory feature; lists stored briefs with a full-article viewer.
+Below the pivot threshold the message is sent directly to the Publisher's `follow_up` tool as before.
+
+### Routing observability in the UI
+
+- The pipeline status panel now shows a **Router** line (e.g. `✅ news, weather · ⏭️ skipped fx, media`) with the router's rationale beneath it.
+- The conversation header caption also displays the routing decision for the initial brief.
 
 ### Diagnostics script
 
-`diagnose_conversation.py` (repo root) — starts a test conversation, adds a follow-up turn, and verifies listing against the live conversation server.
+`diagnose_route.py` (repo root) — tests both `route_tools` (several topics) and `route_intent` (follow-up and pivot cases) against a live router server.
 
 ---
 
@@ -121,7 +124,7 @@ chmod +x scripts/start_backends.sh
 ./scripts/start_backends.sh
 ```
 
-That script starts world-data, finance-monitor, media-engine, memory, conversation, contextualist, scout, and publisher together. Leave it running.
+That script starts world-data, finance-monitor, media-engine, memory, conversation, router, contextualist, scout, and publisher together. Leave it running.
 
 In **another** terminal:
 
@@ -143,10 +146,11 @@ With `source .venv/bin/activate` and repo root as the current directory:
 | 3 | `python mcp-servers/media-engine/server.py` |
 | 4 | `python mcp-servers/memory/server.py` |
 | 5 | `python mcp-servers/conversation/server.py` |
-| 6 | `python agents/contextualist_agent/main.py` |
-| 7 | `python agents/scout_agent/main.py` |
-| 8 | `python agents/publisher_agent/main.py` |
-| 9 | `streamlit run ui/app.py` |
+| 6 | `python mcp-servers/router/server.py` |
+| 7 | `python agents/contextualist_agent/main.py` |
+| 8 | `python agents/scout_agent/main.py` |
+| 9 | `python agents/publisher_agent/main.py` |
+| 10 | `streamlit run ui/app.py` |
 
 ### Service ports
 
@@ -160,33 +164,35 @@ With `source .venv/bin/activate` and repo root as the current directory:
 | Publisher | 8005 |
 | Memory | 8006 |
 | Conversation | 8007 |
+| Router | 8008 |
 | Streamlit | 8501 (default) |
 
 ## Configuration notes
 
-- **Models:** The Publisher uses `gpt-5-nano` via `client.responses.create`, and the UI uses the same model name for location extraction (`ui/app.py`). If your OpenAI account does not expose that model, change both call sites to a model you have access to (for example `gpt-4o-mini`).
+- **Models:** The Publisher uses `gpt-5-nano` via `client.responses.create`; the Router and UI use the same model for location extraction and routing decisions. If your OpenAI account does not expose that model, update all call sites to a model you have access to (for example `gpt-4o-mini`).
 - **Post office:** `synapse/protocol/post_office.json` stores in-flight coordination messages between contextualist and scout. The scout clears it at the start of each run.
-- **Memory store:** ChromaDB persists vectors under `synapse/memory_store/` (created on first run, git-ignored). See the memory branch notes for tuning the distance threshold.
-- **Conversation store:** All conversation threads are persisted in `synapse/conversations/conversations.json`. Created automatically on first run and git-ignored.
-- **Follow-up context window:** The Publisher's `follow_up` tool includes the last 10 turns in the LLM prompt (`MAX_TURNS_IN_PROMPT` in `agents/publisher_agent/main.py`). Increase it for longer coherent threads at the cost of more tokens.
-- **Conversation server is optional:** If the conversation server is not running, `publish_brief` falls back gracefully — the brief is still generated and stored in memory, but no conversation is seeded and follow-ups won't be available.
+- **Memory store:** ChromaDB persists vectors under `synapse/memory_store/` (created on first run, git-ignored).
+- **Conversation store:** All threads persist in `synapse/conversations/conversations.json` (created on first run, git-ignored).
+- **Pivot confidence threshold:** The UI only prompts the user to start a fresh brief when intent confidence is ≥ 0.70. Adjust `PIVOT_CONFIDENCE_THRESHOLD` in `ui/app.py` to make pivot detection more or less aggressive.
+- **Router is optional:** If the router server is not running, the Scout falls back to enabling all tools and the UI skips intent classification, routing all messages directly to `follow_up`.
 
 ## Troubleshooting
 
 - **`ModuleNotFoundError: synapse`:** Run `pip install -e .` from the repository root inside your active virtual environment.
-- **Timeouts or empty context:** Confirm all eight MCP processes are listening and `.env` keys are valid for the upstream APIs.
-- **Conversations sidebar shows "Conversation server unavailable":** Start the conversation server with `python mcp-servers/conversation/server.py`. Follow-up chat requires this server.
-- **Memory sidebar shows "Memory server unavailable":** Start the memory server with `python mcp-servers/memory/server.py`.
-- **Follow-up returns "Conversation not found":** The conversation server's JSON file may have been deleted or the server restarted without state. Generate a fresh brief to start a new conversation.
-- **ChromaDB download on first run:** The ONNX MiniLM embedding model (~80 MB) is downloaded from Hugging Face on first memory server start. Ensure internet access and disk space.
+- **Timeouts or empty context:** Confirm all nine MCP processes are listening and `.env` keys are valid for the upstream APIs.
+- **Router line missing in the UI:** The router server (port 8008) is not running. Start it with `python mcp-servers/router/server.py`. The pipeline continues without it.
+- **Pivot prompt never appears:** Either the router is down (silent fallback to follow-up) or the confidence threshold is too high. Run `python diagnose_route.py` to check router output directly.
+- **Memory or conversation servers unavailable:** Start them individually (`python mcp-servers/memory/server.py`, `python mcp-servers/conversation/server.py`). Both fail gracefully.
+- **ChromaDB download on first run:** The ONNX MiniLM embedding model (~80 MB) is downloaded from Hugging Face on the first memory server start.
 
 ## Project layout
 
 - `agents/` — Contextualist, Scout, Publisher FastMCP entrypoints.
-- `mcp-servers/` — Tool MCP servers: world-data, finance-monitor, media-engine, memory, and **conversation**.
+- `mcp-servers/` — Tool MCP servers: world-data, finance-monitor, media-engine, memory, conversation, and **router**.
 - `synapse/protocol/` — Post office helpers and persisted message file.
-- `synapse/memory_store/` — ChromaDB vector store created on first run (git-ignored).
+- `synapse/memory_store/` — ChromaDB vector store, created on first run (git-ignored).
 - `synapse/conversations/` — JSON store for conversation threads, created on first run (git-ignored).
-- `ui/app.py` — Streamlit frontend with conversation sidebar, chat-shaped brief viewer, and past-brief panel.
-- `diagnose_memory.py` — Dev utility for testing semantic search against the running memory server.
+- `ui/app.py` — Streamlit frontend with router observability, pivot detection, conversation sidebar, and past-brief panel.
+- `diagnose_memory.py` — Dev utility for testing semantic search against the memory server.
 - `diagnose_conversation.py` — Dev utility for testing the conversation server end-to-end.
+- `diagnose_route.py` — Dev utility for testing tool routing and intent classification.
