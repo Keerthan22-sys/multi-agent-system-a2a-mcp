@@ -9,3 +9,5 @@ __pycache__
 *.pywz
 *.pyzw
 *.pyzwz
+
+synapse/memory_store/

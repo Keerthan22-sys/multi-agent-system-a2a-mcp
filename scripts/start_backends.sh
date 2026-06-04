@@ -13,9 +13,13 @@ fi
 
 trap 'kill 0' EXIT
 
+# Tool MCP servers
 python mcp-servers/world-data/server.py &
 python mcp-servers/finance-monitor/server.py &
 python mcp-servers/media-engine/server.py &
+python mcp-servers/memory/server.py &        # NEW: Day 3 — persistent memory
+
+# Agents
 python agents/contextualist_agent/main.py &
 python agents/scout_agent/main.py &
 python agents/publisher_agent/main.py &

@@ -5,19 +5,19 @@
     "task_id": "task-1",
     "status": "done",
     "payload": {
-      "topic": "Last week's new developments in AI field that a AI Engineer should be aware off",
-      "news_headline": null,
+      "topic": "K-pop tour in Bangkok",
+      "news_headline": "Show HN: Simple news aggregator with source bias meters",
       "location": {
-        "city": "Washington, D.C.",
-        "weather": "20.78\u00b0C, overcast clouds"
+        "city": "Bangkok",
+        "weather": "28.28\u00b0C, overcast clouds"
       },
       "financial_context": {
-        "currency_code": "USD",
-        "rate": 1,
+        "currency_code": "THB",
+        "rate": 0.03067,
         "source": "ExchangeRate API"
       }
     },
-    "timestamp": "2026-05-10T21:34:43.386971Z"
+    "timestamp": "2026-06-02T19:14:40.561922Z"
   },
   {
     "sender": "scout",
@@ -25,38 +25,52 @@
     "task_id": "task-1",
     "status": "done",
     "payload": {
-      "topic": "Last week's new developments in AI field that a AI Engineer should be aware off",
-      "location": "Washington, D.C.",
+      "topic": "K-pop tour in Bangkok",
+      "location": "Bangkok",
       "context": {
-        "topic": "Last week's new developments in AI field that a AI Engineer should be aware off",
-        "news_headline": null,
+        "topic": "K-pop tour in Bangkok",
+        "news_headline": "Show HN: Simple news aggregator with source bias meters",
         "location": {
-          "city": "Washington, D.C.",
-          "weather": "20.78\u00b0C, overcast clouds"
+          "city": "Bangkok",
+          "weather": "28.28\u00b0C, overcast clouds"
         },
         "financial_context": {
-          "currency_code": "USD",
-          "rate": 1,
+          "currency_code": "THB",
+          "rate": 0.03067,
           "source": "ExchangeRate API"
         }
       },
       "media": {
-        "query": "Last week's new developments in AI field that a AI Engineer should be aware off",
+        "query": "K-pop tour in Bangkok",
         "images": [
           {
-            "id": 30869149,
-            "url": "https://www.pexels.com/photo/ai-news-concept-with-scrabble-letters-30869149/",
-            "photographer": "Markus Winkler",
-            "alt": "Wooden Scrabble tiles spelling 'AI' and 'NEWS' for a tech concept image.",
+            "id": 24498511,
+            "url": "https://www.pexels.com/photo/modern-buildings-in-the-city-with-neon-billboards-24498511/",
+            "photographer": "Elina Volkova",
+            "alt": "Busy urban street scene with colorful illuminated billboard at night.",
             "src": {
-              "url": "https://images.pexels.com/photos/30869149/pexels-photo-30869149.jpeg?auto=compress&cs=tinysrgb&h=650&w=940",
+              "url": "https://images.pexels.com/photos/24498511/pexels-photo-24498511.jpeg?auto=compress&cs=tinysrgb&h=650&w=940",
               "type": "image"
             }
           }
         ],
         "total_results": 8000
+      },
+      "memory_context": {
+        "query": "K-pop tour in Bangkok",
+        "briefs": [
+          {
+            "brief_id": "brief-df022254",
+            "topic": "K-pop tour in Bangkok",
+            "city": "Bangkok",
+            "created_at": "2026-06-02T19:13:43.978494+00:00",
+            "article_snippet": "Headline: K-pop Tour Lights Up Bangkok, Details Remain Limited\n\nA K-pop tour event in Bangkok is drawing attention as fans await official details on dates and venues. Observers note growing interest in the energized pop scene, though organizers have not released further information at this time.\n\nIndustry watchers say Bangkok remains a key city for international tours in Southeast Asia, with antic",
+            "distance": 0.19818860292434692
+          }
+        ],
+        "count": 1
       }
     },
-    "timestamp": "2026-05-10T21:34:44.071232Z"
+    "timestamp": "2026-06-02T19:14:40.803973Z"
   }
 ]
