@@ -5,15 +5,15 @@
     "task_id": "task-1",
     "status": "done",
     "payload": {
-      "topic": "Indian semiconductor policy 2026",
-      "news_headline": "Why is market falling today? Sensex drops 700 points, Nifty below 23,300. 4 key factors behind today D-Street rout",
+      "topic": "Bitcoin price prediction 2026",
+      "news_headline": "Bitcoin risks new 'purge' with bear-market losses still $35B below 2022 total",
       "location": {
-        "city": "New Delhi",
+        "city": "Washington, D.C.",
         "weather": null
       },
       "financial_context": {
-        "currency_code": "INR",
-        "rate": 0.01044,
+        "currency_code": "USD",
+        "rate": 1,
         "source": "ExchangeRate API"
       },
       "tools_used": [
@@ -24,7 +24,7 @@
         "weather"
       ]
     },
-    "timestamp": "2026-06-04T13:31:31.220168Z"
+    "timestamp": "2026-06-08T18:20:05.755874Z"
   },
   {
     "sender": "scout",
@@ -32,18 +32,18 @@
     "task_id": "task-1",
     "status": "done",
     "payload": {
-      "topic": "Indian semiconductor policy 2026",
-      "location": "New Delhi",
+      "topic": "Bitcoin price prediction 2026",
+      "location": "Washington, D.C.",
       "context": {
-        "topic": "Indian semiconductor policy 2026",
-        "news_headline": "Why is market falling today? Sensex drops 700 points, Nifty below 23,300. 4 key factors behind today D-Street rout",
+        "topic": "Bitcoin price prediction 2026",
+        "news_headline": "Bitcoin risks new 'purge' with bear-market losses still $35B below 2022 total",
         "location": {
-          "city": "New Delhi",
+          "city": "Washington, D.C.",
           "weather": null
         },
         "financial_context": {
-          "currency_code": "INR",
-          "rate": 0.01044,
+          "currency_code": "USD",
+          "rate": 1,
           "source": "ExchangeRate API"
         },
         "tools_used": [
@@ -55,23 +55,23 @@
         ]
       },
       "media": {
-        "query": "Indian semiconductor policy 2026",
+        "query": "Bitcoin price prediction 2026",
         "images": [
           {
-            "id": 6755078,
-            "url": "https://www.pexels.com/photo/gold-motherboard-in-close-up-photography-6755078/",
-            "photographer": "Tima Miroshnichenko",
-            "alt": "Detailed view of a motherboard with visible microchips and circuits.",
+            "id": 8919547,
+            "url": "https://www.pexels.com/photo/smartphone-bitcoin-notepad-and-eyeglasses-8919547/",
+            "photographer": "Leeloo The First",
+            "alt": "Flat lay of bitcoins, smartphone, eyeglasses, and clipboard with 2021 text, symbolizing cryptocurrency trends.",
             "src": {
-              "url": "https://images.pexels.com/photos/6755078/pexels-photo-6755078.jpeg?auto=compress&cs=tinysrgb&h=650&w=940",
+              "url": "https://images.pexels.com/photos/8919547/pexels-photo-8919547.jpeg?auto=compress&cs=tinysrgb&h=650&w=940",
               "type": "image"
             }
           }
         ],
-        "total_results": 8000
+        "total_results": 5136
       },
       "memory_context": {
-        "query": "Indian semiconductor policy 2026",
+        "query": "Bitcoin price prediction 2026",
         "briefs": [
           {
             "brief_id": "brief-51d4b15a",
@@ -79,7 +79,15 @@
             "city": "New Delhi",
             "created_at": "2026-06-04T13:28:34.132384+00:00",
             "article_snippet": "Headline: Indian semiconductor policy 2026: Policy details and markets in focus as sector debate intensifies\n\nNew Delhi \u2014 Amid ongoing discussions around India\u2019s semiconductor policy for 2026, market observers note heightened attention on how the policy could shape investment and supply chains in the electronics sector. Analysts are watching for policy measures that might accelerate local manufact",
-            "distance": 0.23269689083099365
+            "distance": 0.6596287488937378
+          },
+          {
+            "brief_id": "brief-cc354167",
+            "topic": "Indian semiconductor policy 2026",
+            "city": "New Delhi",
+            "created_at": "2026-06-04T13:31:39.097315+00:00",
+            "article_snippet": "Headline: India\u2019s semiconductor policy 2026 under spotlight as markets reel from rout; policy details and investment impact analyzed\n\nNew Delhi \u2014 With discussions around India\u2019s semiconductor policy for 2026 continuing to unfold, analysts say the policy framework could influence investment flows and supply-chain realignments in the sector. The latest market action on D-Street added a backdrop of v",
+            "distance": 0.6869359016418457
           },
           {
             "brief_id": "brief-76faa448",
@@ -87,19 +95,19 @@
             "city": "New Delhi",
             "created_at": "2026-06-02T20:33:07.612831+00:00",
             "article_snippet": "Headline: Underlying momentum in industrial sector intact, FinMin report says; potential boost for semiconductor policy 2026\n\nNew Delhi, India \u2014 A Finance Ministry review indicates that momentum in the industrial sector remains intact and is poised to receive additional support, a backdrop that may influence considerations around India\u2019s semiconductor policy for 2026. The report highlights continu",
-            "distance": 0.23273241519927979
+            "distance": 0.747184157371521
           }
         ],
-        "count": 2
+        "count": 3
       },
       "routing_decision": {
         "use_news": true,
         "use_weather": false,
         "use_fx": true,
         "use_media": true,
-        "reasoning": "Policy updates and implementation are best covered by news; FX adds currency context for investments, and media provides a visual illustration."
+        "reasoning": "Bitcoin price prediction for 2026 is a finance/markets topic best supported by news coverage and FX data; weather is irrelevant and media helps visualize."
       }
     },
-    "timestamp": "2026-06-04T13:31:31.804020Z"
+    "timestamp": "2026-06-08T18:20:06.844124Z"
   }
 ]
