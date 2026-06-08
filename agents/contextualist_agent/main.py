@@ -1,4 +1,7 @@
-# Task 7 + 14: Contextualist Agent — now accepts routing flags (Day 5).
+# Task 7 + 14 + 15: Contextualist Agent — now traced (Day 6).
+from synapse.tracing import setup_tracing, tracer
+setup_tracing("contextualist-agent")
+
 import os
 import asyncio
 import json
@@ -24,79 +27,83 @@ async def contextualize(
 ):
     """
     Fetches contextual data for a topic and city, conditional on routing flags.
-    Skipped tools leave their corresponding field as None on the signal.
     """
-    news, weather, fx = None, None, None
-    tools_used = []
-    tools_skipped = []
+    with tracer.start_as_current_span("contextualist.contextualize") as span:
+        span.set_attribute("topic", topic)
+        span.set_attribute("city", city)
+        span.set_attribute("task_id", task_id)
+        span.set_attribute("use_news", use_news)
+        span.set_attribute("use_weather", use_weather)
+        span.set_attribute("use_fx", use_fx)
 
-    async with AsyncExitStack() as stack:
-        # Only open clients we actually need
-        world_client = None
-        if use_news or use_weather:
-            world_client = await stack.enter_async_context(Client(WORLD_DATA_URL))
+        news, weather, fx = None, None, None
+        tools_used, tools_skipped = [], []
 
-        finance_client = None
-        if use_fx:
-            finance_client = await stack.enter_async_context(Client(FINANCE_URL))
+        async with AsyncExitStack() as stack:
+            world_client = None
+            if use_news or use_weather:
+                world_client = await stack.enter_async_context(Client(WORLD_DATA_URL))
+            finance_client = None
+            if use_fx:
+                finance_client = await stack.enter_async_context(Client(FINANCE_URL))
 
-        # Build the parallel call list
-        calls = []
-        call_keys = []
-        if use_news and world_client:
-            calls.append(world_client.call_tool("search_news", {"query": topic}))
-            call_keys.append("news")
-        else:
-            tools_skipped.append("news")
+            calls, call_keys = [], []
+            if use_news and world_client:
+                calls.append(world_client.call_tool("search_news", {"query": topic}))
+                call_keys.append("news")
+            else:
+                tools_skipped.append("news")
+            if use_weather and world_client:
+                calls.append(world_client.call_tool("get_weather", {"city": city}))
+                call_keys.append("weather")
+            else:
+                tools_skipped.append("weather")
+            if use_fx and finance_client:
+                calls.append(finance_client.call_tool("get_fx_rate", {"location": city}))
+                call_keys.append("fx")
+            else:
+                tools_skipped.append("fx")
 
-        if use_weather and world_client:
-            calls.append(world_client.call_tool("get_weather", {"city": city}))
-            call_keys.append("weather")
-        else:
-            tools_skipped.append("weather")
+            # Wrap the parallel call set in its own span so its latency is visible
+            with tracer.start_as_current_span("contextualist.fetch_parallel") as fetch_span:
+                fetch_span.set_attribute("call_count", len(calls))
+                fetch_span.set_attribute("calls", ",".join(call_keys))
+                if calls:
+                    results = await asyncio.gather(*calls)
+                    data_by_key = {k: results[i].data for i, k in enumerate(call_keys)}
+                else:
+                    data_by_key = {}
 
-        if use_fx and finance_client:
-            calls.append(finance_client.call_tool("get_fx_rate", {"location": city}))
-            call_keys.append("fx")
-        else:
-            tools_skipped.append("fx")
+            news = data_by_key.get("news")
+            weather = data_by_key.get("weather")
+            fx = data_by_key.get("fx")
+            tools_used = list(data_by_key.keys())
 
-        if calls:
-            results = await asyncio.gather(*calls)
-            data_by_key = {key: results[i].data for i, key in enumerate(call_keys)}
-        else:
-            data_by_key = {}
+        signal = {
+            "topic": topic,
+            "news_headline": (news.get("headline") if news else None),
+            "location": {
+                "city": city,
+                "weather": (
+                    f"{weather.get('temperature')}°C, {weather.get('description')}"
+                    if weather else None
+                ),
+            },
+            "financial_context": fx,
+            "tools_used": tools_used,
+            "tools_skipped": tools_skipped,
+        }
+        span.set_attribute("tools_used", ",".join(tools_used))
+        span.set_attribute("news_headline_found", bool(signal.get("news_headline")))
 
-        news = data_by_key.get("news")
-        weather = data_by_key.get("weather")
-        fx = data_by_key.get("fx")
-        tools_used = list(data_by_key.keys())
-
-    # Build the signal — None for skipped fields so Publisher can detect them
-    signal = {
-        "topic": topic,
-        "news_headline": (news.get("headline") if news else None),
-        "location": {
-            "city": city,
-            "weather": (
-                f"{weather.get('temperature')}°C, {weather.get('description')}"
-                if weather else None
-            ),
-        },
-        "financial_context": fx,
-        "tools_used": tools_used,
-        "tools_skipped": tools_skipped,
-    }
-
-    send_message({
-        "sender": "contextualist",
-        "recipient": "scout",
-        "task_id": task_id,
-        "status": "done",
-        "payload": signal,
-    })
-
-    return signal
+        send_message({
+            "sender": "contextualist",
+            "recipient": "scout",
+            "task_id": task_id,
+            "status": "done",
+            "payload": signal,
+        })
+        return signal
 
 
 if __name__ == "__main__":

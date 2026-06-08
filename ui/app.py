@@ -1,4 +1,7 @@
-# Task 10 + 12 + 13 + 14: Streamlit UI — Router-aware (Day 5).
+# Task 10 + 12 + 13 + 14 + 15: Streamlit UI — now traced (Day 6).
+from synapse.tracing import setup_tracing, tracer
+setup_tracing("ui")
+
 from dotenv import load_dotenv
 from openai import OpenAI
 import json
@@ -10,37 +13,41 @@ from fastmcp import Client
 
 load_dotenv()
 
-# MCP endpoints
 SCOUT_URL = "http://0.0.0.0:8004/mcp"
 PUBLISHER_URL = "http://0.0.0.0:8005/mcp"
 MEMORY_URL = "http://0.0.0.0:8006/mcp"
 CONVERSATION_URL = "http://0.0.0.0:8007/mcp"
-ROUTER_URL = "http://0.0.0.0:8008/mcp"  # NEW
+ROUTER_URL = "http://0.0.0.0:8008/mcp"
+PHOENIX_UI_URL = os.getenv("PHOENIX_COLLECTOR_ENDPOINT", "http://localhost:6006")
 
-# Pivot detection: only act on confident pivots
 PIVOT_CONFIDENCE_THRESHOLD = 0.70
 
 api_key = os.getenv("OPENAI_API_KEY")
 client = OpenAI(api_key=api_key)
 
 
-# ---------- Async helpers ----------
 async def call_tool(url, tool, params):
     async with Client(url) as c:
         res = await c.call_tool(tool, params)
         return res.data
 
 def run_scout(topic, city):
-    return asyncio.run(call_tool(SCOUT_URL, "scout", {"topic": topic, "city": city}))
+    with tracer.start_as_current_span("ui.run_scout") as span:
+        span.set_attribute("topic", topic)
+        span.set_attribute("city", city)
+        return asyncio.run(call_tool(SCOUT_URL, "scout", {"topic": topic, "city": city}))
 
 def run_publisher_initial(payload):
-    return asyncio.run(call_tool(PUBLISHER_URL, "publish_brief", {"payload": payload}))
+    with tracer.start_as_current_span("ui.run_publisher_initial"):
+        return asyncio.run(call_tool(PUBLISHER_URL, "publish_brief", {"payload": payload}))
 
 def run_publisher_followup(conversation_id, user_question):
-    return asyncio.run(call_tool(
-        PUBLISHER_URL, "follow_up",
-        {"conversation_id": conversation_id, "user_question": user_question},
-    ))
+    with tracer.start_as_current_span("ui.run_publisher_followup") as span:
+        span.set_attribute("conversation_id", conversation_id)
+        return asyncio.run(call_tool(
+            PUBLISHER_URL, "follow_up",
+            {"conversation_id": conversation_id, "user_question": user_question},
+        ))
 
 def list_recent_briefs(limit=10):
     return asyncio.run(call_tool(MEMORY_URL, "list_recent_briefs", {"limit": limit}))
@@ -56,14 +63,15 @@ def get_conversation(conversation_id):
                                  {"conversation_id": conversation_id}))
 
 def run_router_intent(message, conversation_topic, recent_turns):
-    return asyncio.run(call_tool(
-        ROUTER_URL, "route_intent",
-        {
-            "message": message,
-            "conversation_topic": conversation_topic,
-            "recent_turns": recent_turns,
-        },
-    ))
+    with tracer.start_as_current_span("ui.run_router_intent"):
+        return asyncio.run(call_tool(
+            ROUTER_URL, "route_intent",
+            {
+                "message": message,
+                "conversation_topic": conversation_topic,
+                "recent_turns": recent_turns,
+            },
+        ))
 
 
 def get_location_context(news_text: str) -> dict:
@@ -95,18 +103,12 @@ def normalize_payload(payload):
     return payload
 
 
-# ---------- Session state ----------
 for key, default in [
-    ("active_conversation_id", None),
-    ("turns", []),
-    ("initial_image_url", None),
-    ("memory_used", 0),
-    ("topic", ""),
-    ("city", ""),
-    ("routing_decision", None),     # NEW
-    ("pending_pivot", None),        # NEW
-    ("new_brief_topic", ""),        # widget key for Topic input
-    ("topic_prefill", None),        # one-shot value applied before widget mounts
+    ("active_conversation_id", None), ("turns", []),
+    ("initial_image_url", None), ("memory_used", 0),
+    ("topic", ""), ("city", ""),
+    ("routing_decision", None), ("pending_pivot", None),
+    ("prefilled_topic", ""),
 ]:
     if key not in st.session_state:
         st.session_state[key] = default
@@ -129,7 +131,6 @@ def _hydrate_from_conversation(conversation_id: str):
         )
     except Exception:
         st.session_state["initial_image_url"] = None
-    # Recover routing decision if it was saved with the payload
     st.session_state["routing_decision"] = (
         conv.get("initial_payload", {}).get("routing_decision")
     )
@@ -144,15 +145,12 @@ def _reset_session(keep_prefilled_topic: str = ""):
     st.session_state["city"] = ""
     st.session_state["routing_decision"] = None
     st.session_state["pending_pivot"] = None
-    st.session_state["topic_prefill"] = keep_prefilled_topic
+    st.session_state["prefilled_topic"] = keep_prefilled_topic
 
 
 def _format_routing_line(routing: dict) -> str:
-    """Render routing decision as a compact one-liner."""
-    if not routing:
-        return ""
-    enabled = []
-    skipped = []
+    if not routing: return ""
+    enabled, skipped = [], []
     for k, label in [("use_news", "news"), ("use_weather", "weather"),
                      ("use_fx", "fx"), ("use_media", "media")]:
         (enabled if routing.get(k) else skipped).append(label)
@@ -162,12 +160,19 @@ def _format_routing_line(routing: dict) -> str:
     return " · ".join(parts)
 
 
-# -------------------- UI --------------------
 st.set_page_config(page_title="SYNAPSE", layout="wide")
 st.title("SYNAPSE — Context-Aware Reports")
 
-# ---------- Sidebar (unchanged from Day 4) ----------
 with st.sidebar:
+    # NEW: Phoenix link at top of sidebar
+    st.link_button(
+        "🔭 View traces in Phoenix",
+        PHOENIX_UI_URL,
+        use_container_width=True,
+        help="Opens the Phoenix observability dashboard in a new tab",
+    )
+    st.divider()
+
     st.header("💬 Conversations")
     if st.button("➕ New conversation", use_container_width=True, type="primary"):
         _reset_session()
@@ -215,15 +220,11 @@ with st.sidebar:
         st.caption(f"Memory server unavailable: {e}")
 
 
-# ---------- Main ----------
-
 if st.session_state["active_conversation_id"] is None:
     st.subheader("Start a new brief")
-    # Apply prefill before the widget mounts (cannot set widget key after text_input).
-    if st.session_state["topic_prefill"] is not None:
-        st.session_state["new_brief_topic"] = st.session_state["topic_prefill"]
-        st.session_state["topic_prefill"] = None
-    topic = st.text_input("Topic", key="new_brief_topic")
+    default_topic = st.session_state["prefilled_topic"] or "Semiconductor factory opening in Japan"
+    topic = st.text_input("Topic", default_topic)
+    st.session_state["prefilled_topic"] = ""
 
     try:
         city_guess = get_location_context(topic).get("capital", "Tokyo")
@@ -232,45 +233,48 @@ if st.session_state["active_conversation_id"] is None:
     st.caption(f"Auto-detected city: **{city_guess}**")
 
     if st.button("Generate Brief", type="primary"):
-        with st.status("Running pipeline...", expanded=True) as status:
-            st.write("🔍 Scout: gathering context, media, and memory...")
-            scout_data = run_scout(topic, city_guess)
-            scout_data = normalize_payload(scout_data)
+        with tracer.start_as_current_span("ui.generate_brief") as ui_span:
+            ui_span.set_attribute("topic", topic)
+            ui_span.set_attribute("city", city_guess)
+            with st.status("Running pipeline...", expanded=True) as status:
+                st.write("🔍 Scout: gathering context, media, and memory...")
+                scout_data = run_scout(topic, city_guess)
+                scout_data = normalize_payload(scout_data)
+                routing = scout_data.get("routing_decision") or {}
+                if routing:
+                    st.write(f"🧭 Router: {_format_routing_line(routing)}")
+                    if routing.get("reasoning"):
+                        st.caption(f"   _{routing['reasoning']}_")
+                mem_count = (scout_data.get("memory_context") or {}).get("count", 0)
+                if mem_count > 0:
+                    st.write(f"🧠 Memory: found {mem_count} related past brief(s)")
+                else:
+                    st.write("🧠 Memory: no related past briefs")
+                st.write("✍️ Publisher: generating brief + starting conversation...")
+                pub_data = run_publisher_initial(scout_data)
+                status.update(label="Done", state="complete", expanded=False)
 
-            # NEW: surface routing decision
-            routing = scout_data.get("routing_decision") or {}
-            if routing:
-                st.write(f"🧭 Router: {_format_routing_line(routing)}")
-                if routing.get("reasoning"):
-                    st.caption(f"   _{routing['reasoning']}_")
-
-            mem_count = (scout_data.get("memory_context") or {}).get("count", 0)
-            if mem_count > 0:
-                st.write(f"🧠 Memory: found {mem_count} related past brief(s)")
-            else:
-                st.write("🧠 Memory: no related past briefs")
-
-            st.write("✍️ Publisher: generating brief + starting conversation...")
-            pub_data = run_publisher_initial(scout_data)
-            status.update(label="Done", state="complete", expanded=False)
-
-        st.session_state["active_conversation_id"] = pub_data["conversation_id"]
-        st.session_state["topic"] = topic
-        st.session_state["city"] = city_guess
-        st.session_state["memory_used"] = pub_data.get("memory_used", 0)
-        st.session_state["routing_decision"] = routing
-        try:
-            st.session_state["initial_image_url"] = (
-                scout_data["media"]["images"][0]["src"]["url"]
+            st.info(
+                f"📊 [View this run's traces in Phoenix]({PHOENIX_UI_URL})  ·  "
+                f"Look for the most recent traces under projects → `synapse`"
             )
-        except Exception:
-            st.session_state["initial_image_url"] = None
-        conv = get_conversation(pub_data["conversation_id"])
-        st.session_state["turns"] = conv.get("turns", [])
-        st.rerun()
+
+            st.session_state["active_conversation_id"] = pub_data["conversation_id"]
+            st.session_state["topic"] = topic
+            st.session_state["city"] = city_guess
+            st.session_state["memory_used"] = pub_data.get("memory_used", 0)
+            st.session_state["routing_decision"] = routing
+            try:
+                st.session_state["initial_image_url"] = (
+                    scout_data["media"]["images"][0]["src"]["url"]
+                )
+            except Exception:
+                st.session_state["initial_image_url"] = None
+            conv = get_conversation(pub_data["conversation_id"])
+            st.session_state["turns"] = conv.get("turns", [])
+            st.rerun()
 
 else:
-    # ---------- CONVERSATION MODE ----------
     header_cols = st.columns([6, 1])
     with header_cols[0]:
         st.subheader(f"💬 {st.session_state['topic']}")
@@ -292,7 +296,6 @@ else:
             f"related past brief(s) from memory."
         )
 
-    # Render the transcript
     for turn in st.session_state["turns"]:
         with st.chat_message(turn.get("role", "assistant")):
             st.markdown(turn.get("content", ""), unsafe_allow_html=True)
@@ -307,7 +310,6 @@ else:
                     use_container_width=True,
                 )
 
-    # ----- Pivot prompt (NEW) -----
     if st.session_state.get("pending_pivot"):
         pivot = st.session_state["pending_pivot"]
         with st.chat_message("user"):
@@ -324,13 +326,11 @@ else:
             _reset_session(keep_prefilled_topic=new_topic)
             st.rerun()
         if cols[1].button("💬 Continue here anyway", use_container_width=True):
-            # Treat the held message as a follow-up
             held_msg = pivot["message"]
             st.session_state["pending_pivot"] = None
             try:
                 result = run_publisher_followup(
-                    st.session_state["active_conversation_id"],
-                    held_msg,
+                    st.session_state["active_conversation_id"], held_msg,
                 )
                 if not result.get("error"):
                     conv = get_conversation(st.session_state["active_conversation_id"])
@@ -338,12 +338,9 @@ else:
             except Exception as e:
                 st.error(f"Follow-up failed: {e}")
             st.rerun()
-
     else:
-        # ----- Normal chat input -----
         user_question = st.chat_input("Ask a follow-up about this brief...")
         if user_question:
-            # Ask the Router first
             intent = {"intent": "follow_up", "confidence": 0.0}
             try:
                 intent = run_router_intent(
@@ -368,7 +365,6 @@ else:
                 }
                 st.rerun()
             else:
-                # Optimistic render then call publisher
                 with st.chat_message("user"):
                     st.markdown(user_question)
                 with st.chat_message("assistant"):
@@ -389,7 +385,6 @@ else:
                 st.rerun()
 
 
-# ---------- Past brief viewer ----------
 if st.session_state.get("viewing_brief"):
     st.divider()
     st.subheader("📖 Viewing Past Brief")

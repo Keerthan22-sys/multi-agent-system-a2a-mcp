@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "multi-agent-system-a2a-mcp"
-version = "0.2.0"
-description = "SYNAPSE: multi-agent context-aware reports via FastMCP, post-office A2A, and persistent semantic memory"
+version = "0.3.0"
+description = "SYNAPSE: multi-agent context-aware reports with memory, conversations, smart routing, and full observability"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
@@ -15,6 +15,11 @@ dependencies = [
   "requests>=2.31",
   "streamlit>=1.39",
   "chromadb>=0.5",
+  "arize-phoenix>=4.0",
+  "arize-phoenix-otel>=0.5",
+  "openinference-instrumentation-openai>=0.1.18",
+  "opentelemetry-api>=1.20",
+  "opentelemetry-sdk>=1.20",
 ]
 
 [tool.setuptools.packages.find]
