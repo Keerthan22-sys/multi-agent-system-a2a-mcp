@@ -1,6 +1,6 @@
 # SYNAPSE — Multi-agent context-aware reports (A2A + MCP)
 
-This project wires several **FastMCP** servers together: lightweight "tool" servers (news, weather, FX, images, persistent memory, conversation state, and an LLM-powered router) feed **agents** that coordinate through a tiny file-based mailbox (**post office** under `synapse/protocol/`). A **Streamlit** UI triggers the Scout and Publisher tools to produce an article grounded in aggregated signals — with dynamic tool selection per topic and intent-aware follow-up routing in conversations.
+This project wires several **FastMCP** servers together: lightweight "tool" servers (news, weather, FX, images, persistent memory, conversation state, and an LLM-powered router) feed **agents** that coordinate through a tiny file-based mailbox (**post office** under `synapse/protocol/`). A **Streamlit** UI triggers the Scout and Publisher tools to produce an article grounded in aggregated signals — with dynamic tool selection per topic, intent-aware follow-up routing, and end-to-end distributed tracing via **Arize Phoenix**.
 
 ## Architecture
 
@@ -21,6 +21,7 @@ flowchart LR
   end
   UI[Streamlit ui/app.py]
   PO[(post_office.json)]
+  PHX[(Phoenix :6006)]
   RT --> SC
   WD --> CTX
   FM --> CTX
@@ -36,52 +37,85 @@ flowchart LR
   MEM --> UI
   CONV --> UI
   RT --> UI
+  CTX -.traces.-> PHX
+  SC -.traces.-> PHX
+  PUB -.traces.-> PHX
+  MEM -.traces.-> PHX
+  CONV -.traces.-> PHX
+  RT -.traces.-> PHX
+  UI -.traces.-> PHX
 ```
 
 - **world-data** — NewsAPI headline search and OpenWeather current conditions.
 - **finance-monitor** — Resolves currency from location (REST Countries) and USD conversion rate (ExchangeRate-API).
 - **media-engine** — Pexels image search.
-- **memory** — Persistent semantic store backed by ChromaDB. Stores finished briefs and exposes cosine-similarity search so agents can recall related prior coverage.
-- **conversation** — Stores multi-turn conversation state in a JSON file. Tracks every user question and assistant reply tied to a brief.
-- **router** — LLM-powered routing server. Decides which tool servers are relevant for a given topic and classifies follow-up messages as continued conversation or a pivot to a new topic.
-- **contextualist** — Calls world-data and finance-monitor based on routing flags, merges a structured signal, writes to the post office for the scout.
-- **scout** — Asks the router which tools to invoke, drives contextualist and media-engine conditionally, queries memory, and merges all signals for the Publisher.
+- **memory** — Persistent semantic store backed by ChromaDB. Stores finished briefs and exposes cosine-similarity search.
+- **conversation** — Stores multi-turn conversation state in a JSON file.
+- **router** — LLM-powered routing server. Decides which tool servers are relevant for a topic and classifies follow-up messages as continued conversation or a pivot.
+- **contextualist** — Calls world-data and finance-monitor based on routing flags, merges a structured signal, writes to the post office.
+- **scout** — Asks the router which tools to invoke, drives contextualist and media-engine conditionally, queries memory, merges all signals for the Publisher.
 - **publisher** — Generates the initial brief (augmented by memory context), seeds a conversation record, and handles follow-up questions.
 
 Root-level `server.py` and `agent.py` are commented FastMCP examples only; they are not part of the running stack.
 
 ## What's new in this branch
 
-### LLM-powered Router (`mcp-servers/router/`)
+### End-to-end observability with Arize Phoenix
 
-A new FastMCP server at port **8008** makes dynamic routing decisions using the OpenAI chat API in JSON mode. It exposes two tools:
+Every agent, MCP server, and the Streamlit UI now emits OpenTelemetry traces to a local **Phoenix** instance (port **6006**). You can see the full lifecycle of a request — UI click → router decision → contextualist fan-out → memory lookup → publisher LLM call → conversation seeding — as a single distributed trace.
 
-| Tool | Description |
-|------|-------------|
-| `route_tools` | Given a topic, decides which tool servers (news, weather, FX, media) are relevant. Returns boolean flags and a one-sentence rationale. Fails safe — enables all tools if the LLM call fails. |
-| `route_intent` | Given a chat message and recent conversation turns, classifies the message as a `follow_up` (elaborates on the current topic) or a `pivot` (new topic needing a fresh brief). Returns intent, confidence score, a suggested topic for pivots, and a rationale. Fails safe — defaults to `follow_up`. |
+#### `synapse/tracing.py` — centralized setup
 
-### Dynamic tool selection in the Scout and Contextualist
+A new module provides a two-line instrumentation pattern that every service uses:
 
-Before each pipeline run, the Scout calls `route_tools` and passes the resulting boolean flags (`use_news`, `use_weather`, `use_fx`) to the Contextualist. The Contextualist only opens MCP clients and makes API calls for the enabled tools, skipping the rest. The `tools_used` and `tools_skipped` lists are returned on the signal so the UI can surface them. Media fetching in the Scout is similarly gated on the `use_media` flag. The `routing_decision` dict rides along in the final payload for full observability.
+```python
+from synapse.tracing import setup_tracing, tracer
+setup_tracing("publisher-agent")
+```
 
-### Intent-aware follow-up in the UI
+Key properties:
 
-When the user types a message in conversation mode, the UI first calls `route_intent`. If the router returns `pivot` with confidence ≥ 0.70 (`PIVOT_CONFIDENCE_THRESHOLD`), the UI pauses and shows a confirmation prompt:
+- **Auto-instruments OpenAI** via OpenInference — every `client.responses.create` / `client.chat.completions.create` call appears as a span with model name, prompt, response, token counts, and latency, with **zero manual code**.
+- **`tracer` proxy** — a module-level lazy proxy so `from synapse.tracing import tracer` works even before `setup_tracing()` is called.
+- **Fail-safe `_NoOpTracer`** — if `arize-phoenix-otel` isn't installed or Phoenix isn't running, every span call becomes a no-op. The system continues to function without traces.
+- **Idempotent** — `setup_tracing()` only initializes once per process.
+- **Configurable collector** — defaults to `http://localhost:6006`, override with `PHOENIX_COLLECTOR_ENDPOINT`.
 
-- **Start fresh brief** — resets the session and pre-fills the topic input with the router's suggested topic.
-- **Continue here anyway** — treats the message as a follow-up regardless.
+#### Instrumented surfaces
 
-Below the pivot threshold the message is sent directly to the Publisher's `follow_up` tool as before.
+Every service in the stack now creates manual spans around its top-level operations and attaches semantic attributes (`topic`, `city`, `memory_hits`, `conversation_id`, routing flags, etc.):
 
-### Routing observability in the UI
+| Service | Notable spans |
+|---------|---------------|
+| **ui** | `ui.run_scout`, `ui.run_publisher_initial`, `ui.run_publisher_followup`, `ui.route_intent` |
+| **contextualist** | `contextualist.contextualize` with `tools_used`/`tools_skipped` attributes |
+| **scout** | `scout.scout` covering routing, contextualist call, media fetch, and memory query |
+| **publisher** | `publisher.publish_brief`, `publisher.follow_up` |
+| **memory** | spans per tool (`store_brief`, `search_briefs`, etc.) |
+| **conversation** | spans per tool (`start_conversation`, `add_turn`, etc.) |
+| **router** | `router.route_tools`, `router.route_intent` |
 
-- The pipeline status panel now shows a **Router** line (e.g. `✅ news, weather · ⏭️ skipped fx, media`) with the router's rationale beneath it.
-- The conversation header caption also displays the routing decision for the initial brief.
+OpenAI calls inside any of these spans are auto-captured as child spans by OpenInference — no extra code required.
 
-### Diagnostics script
+#### Phoenix UI link in Streamlit
 
-`diagnose_route.py` (repo root) — tests both `route_tools` (several topics) and `route_intent` (follow-up and pivot cases) against a live router server.
+The UI exposes the Phoenix endpoint (`PHOENIX_UI_URL`) so traces are one click away while debugging the live app.
+
+#### Startup ordering
+
+`scripts/start_backends.sh` now launches **Phoenix first** (`phoenix serve`) and sleeps briefly so the OTLP collector is bound before any agent tries to export spans.
+
+### New dependencies
+
+```text
+arize-phoenix>=4.0
+arize-phoenix-otel>=0.5
+openinference-instrumentation-openai>=0.1.18
+opentelemetry-api>=1.20
+opentelemetry-sdk>=1.20
+```
+
+These have been added to both `requirements.txt` and `pyproject.toml`. Package version is bumped to **0.3.0**.
 
 ---
 
@@ -92,7 +126,7 @@ Below the pivot threshold the message is sent directly to the Publisher's `follo
 
 ## Setup
 
-Clone the repo, create a virtual environment, install dependencies, and install the small local `synapse` package so `from synapse.protocol...` resolves from any working directory:
+Clone the repo, create a virtual environment, install dependencies (now including Phoenix), and install the small local `synapse` package so `from synapse.protocol...` and `from synapse.tracing...` resolve from any working directory:
 
 ```bash
 cd multi-agent-system-a2a-mcp
@@ -113,9 +147,9 @@ cp .env.example .env
 
 ## How to run
 
-You need **one process per MCP/agent server** plus **Streamlit**. All HTTP MCP endpoints use host `0.0.0.0` so they listen on every interface; tools are exposed under each server's `/mcp` URL.
+You need **Phoenix**, **one process per MCP/agent server**, plus **Streamlit**. All HTTP MCP endpoints use host `0.0.0.0` so they listen on every interface; tools are exposed under each server's `/mcp` URL.
 
-### Option A — Single shell (background workers)
+### Option A — Single shell (background workers, recommended)
 
 From the repo root with the virtual environment activated:
 
@@ -124,7 +158,7 @@ chmod +x scripts/start_backends.sh
 ./scripts/start_backends.sh
 ```
 
-That script starts world-data, finance-monitor, media-engine, memory, conversation, router, contextualist, scout, and publisher together. Leave it running.
+That script now starts **Phoenix first** (port 6006) and then all six MCP tool servers and three agents. Leave it running.
 
 In **another** terminal:
 
@@ -133,7 +167,7 @@ source .venv/bin/activate
 streamlit run ui/app.py
 ```
 
-Open the URL Streamlit prints (usually http://localhost:8501). Enter a topic and click **Generate Brief**.
+Open the Streamlit URL (usually http://localhost:8501) for the app, and **http://localhost:6006** for the Phoenix trace explorer.
 
 ### Option B — Separate terminals
 
@@ -141,16 +175,17 @@ With `source .venv/bin/activate` and repo root as the current directory:
 
 | Terminal | Command |
 |----------|---------|
-| 1 | `python mcp-servers/world-data/server.py` |
-| 2 | `python mcp-servers/finance-monitor/server.py` |
-| 3 | `python mcp-servers/media-engine/server.py` |
-| 4 | `python mcp-servers/memory/server.py` |
-| 5 | `python mcp-servers/conversation/server.py` |
-| 6 | `python mcp-servers/router/server.py` |
-| 7 | `python agents/contextualist_agent/main.py` |
-| 8 | `python agents/scout_agent/main.py` |
-| 9 | `python agents/publisher_agent/main.py` |
-| 10 | `streamlit run ui/app.py` |
+| 1 | `phoenix serve` |
+| 2 | `python mcp-servers/world-data/server.py` |
+| 3 | `python mcp-servers/finance-monitor/server.py` |
+| 4 | `python mcp-servers/media-engine/server.py` |
+| 5 | `python mcp-servers/memory/server.py` |
+| 6 | `python mcp-servers/conversation/server.py` |
+| 7 | `python mcp-servers/router/server.py` |
+| 8 | `python agents/contextualist_agent/main.py` |
+| 9 | `python agents/scout_agent/main.py` |
+| 10 | `python agents/publisher_agent/main.py` |
+| 11 | `streamlit run ui/app.py` |
 
 ### Service ports
 
@@ -165,34 +200,38 @@ With `source .venv/bin/activate` and repo root as the current directory:
 | Memory | 8006 |
 | Conversation | 8007 |
 | Router | 8008 |
+| **Phoenix UI + OTLP collector** | **6006** |
 | Streamlit | 8501 (default) |
 
 ## Configuration notes
 
-- **Models:** The Publisher uses `gpt-5-nano` via `client.responses.create`; the Router and UI use the same model for location extraction and routing decisions. If your OpenAI account does not expose that model, update all call sites to a model you have access to (for example `gpt-4o-mini`).
+- **Models:** Publisher uses `gpt-5-nano` via `client.responses.create`; the Router and UI use the same model for routing decisions and location extraction. Change all call sites if your account doesn't expose that model.
 - **Post office:** `synapse/protocol/post_office.json` stores in-flight coordination messages between contextualist and scout. The scout clears it at the start of each run.
-- **Memory store:** ChromaDB persists vectors under `synapse/memory_store/` (created on first run, git-ignored).
-- **Conversation store:** All threads persist in `synapse/conversations/conversations.json` (created on first run, git-ignored).
-- **Pivot confidence threshold:** The UI only prompts the user to start a fresh brief when intent confidence is ≥ 0.70. Adjust `PIVOT_CONFIDENCE_THRESHOLD` in `ui/app.py` to make pivot detection more or less aggressive.
-- **Router is optional:** If the router server is not running, the Scout falls back to enabling all tools and the UI skips intent classification, routing all messages directly to `follow_up`.
+- **Memory store:** ChromaDB persists vectors under `synapse/memory_store/` (git-ignored).
+- **Conversation store:** Threads persist in `synapse/conversations/conversations.json` (git-ignored).
+- **Pivot confidence threshold:** Adjust `PIVOT_CONFIDENCE_THRESHOLD` in `ui/app.py` (default `0.70`) to make pivot detection more/less aggressive.
+- **Phoenix endpoint:** Set `PHOENIX_COLLECTOR_ENDPOINT` to point services at a remote Phoenix instance (default `http://localhost:6006`). When unset/unavailable, tracing degrades to a no-op — the app continues to work.
+- **Disabling tracing:** Simply don't install the Phoenix packages, or don't run `phoenix serve`. `synapse.tracing` will fall back to `_NoOpTracer` and the rest of the stack is unaffected.
 
 ## Troubleshooting
 
 - **`ModuleNotFoundError: synapse`:** Run `pip install -e .` from the repository root inside your active virtual environment.
-- **Timeouts or empty context:** Confirm all nine MCP processes are listening and `.env` keys are valid for the upstream APIs.
-- **Router line missing in the UI:** The router server (port 8008) is not running. Start it with `python mcp-servers/router/server.py`. The pipeline continues without it.
-- **Pivot prompt never appears:** Either the router is down (silent fallback to follow-up) or the confidence threshold is too high. Run `python diagnose_route.py` to check router output directly.
-- **Memory or conversation servers unavailable:** Start them individually (`python mcp-servers/memory/server.py`, `python mcp-servers/conversation/server.py`). Both fail gracefully.
-- **ChromaDB download on first run:** The ONNX MiniLM embedding model (~80 MB) is downloaded from Hugging Face on the first memory server start.
+- **`[tracing] arize-phoenix-otel not installed`:** Re-run `pip install -r requirements.txt` — the Phoenix packages were added in this release.
+- **No spans appear in Phoenix:** Confirm `phoenix serve` is running on port 6006 before launching the agents. Restart the services after Phoenix is up so they re-register their exporters.
+- **OpenAI calls aren't traced:** Make sure `setup_tracing()` is called **before** `from openai import OpenAI` is imported in that module — OpenInference patches at import time.
+- **Timeouts or empty context:** Confirm all nine MCP processes are listening and `.env` keys are valid for upstream APIs.
+- **Router line missing in UI:** Router server (port 8008) is not running.
+- **ChromaDB download on first run:** ONNX MiniLM embedding model (~80 MB) is downloaded from Hugging Face on first memory server start.
 
 ## Project layout
 
-- `agents/` — Contextualist, Scout, Publisher FastMCP entrypoints.
-- `mcp-servers/` — Tool MCP servers: world-data, finance-monitor, media-engine, memory, conversation, and **router**.
+- `agents/` — Contextualist, Scout, Publisher FastMCP entrypoints (all traced).
+- `mcp-servers/` — Tool MCP servers: world-data, finance-monitor, media-engine, memory, conversation, router (all traced).
 - `synapse/protocol/` — Post office helpers and persisted message file.
-- `synapse/memory_store/` — ChromaDB vector store, created on first run (git-ignored).
-- `synapse/conversations/` — JSON store for conversation threads, created on first run (git-ignored).
-- `ui/app.py` — Streamlit frontend with router observability, pivot detection, conversation sidebar, and past-brief panel.
+- `synapse/tracing.py` — **NEW:** centralized Phoenix/OpenTelemetry setup with fail-safe no-op fallback.
+- `synapse/memory_store/` — ChromaDB vector store (git-ignored).
+- `synapse/conversations/` — JSON store for conversation threads (git-ignored).
+- `ui/app.py` — Streamlit frontend with router observability, pivot detection, conversation sidebar, past-brief panel, and trace spans.
 - `diagnose_memory.py` — Dev utility for testing semantic search against the memory server.
 - `diagnose_conversation.py` — Dev utility for testing the conversation server end-to-end.
 - `diagnose_route.py` — Dev utility for testing tool routing and intent classification.
