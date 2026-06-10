@@ -5,26 +5,22 @@
     "task_id": "task-1",
     "status": "done",
     "payload": {
-      "topic": "Bitcoin price prediction 2026",
-      "news_headline": "Bitcoin risks new 'purge' with bear-market losses still $35B below 2022 total",
+      "topic": "ICC Cricket World Cup 2026",
+      "news_headline": "Hurricane Group Names rEvolution Worldwide Agency of Record for FISE Birmingham 2026, Global Action Sports Festival\u2019s U.S. Return",
       "location": {
-        "city": "Washington, D.C.",
-        "weather": null
+        "city": "New Delhi",
+        "weather": "40.07\u00b0C, clear sky"
       },
-      "financial_context": {
-        "currency_code": "USD",
-        "rate": 1,
-        "source": "ExchangeRate API"
-      },
+      "financial_context": null,
       "tools_used": [
         "news",
-        "fx"
+        "weather"
       ],
       "tools_skipped": [
-        "weather"
+        "fx"
       ]
     },
-    "timestamp": "2026-06-08T18:20:05.755874Z"
+    "timestamp": "2026-06-10T18:55:14.753746Z"
   },
   {
     "sender": "scout",
@@ -32,82 +28,78 @@
     "task_id": "task-1",
     "status": "done",
     "payload": {
-      "topic": "Bitcoin price prediction 2026",
-      "location": "Washington, D.C.",
+      "topic": "ICC Cricket World Cup 2026",
+      "location": "New Delhi",
       "context": {
-        "topic": "Bitcoin price prediction 2026",
-        "news_headline": "Bitcoin risks new 'purge' with bear-market losses still $35B below 2022 total",
+        "topic": "ICC Cricket World Cup 2026",
+        "news_headline": "Hurricane Group Names rEvolution Worldwide Agency of Record for FISE Birmingham 2026, Global Action Sports Festival\u2019s U.S. Return",
         "location": {
-          "city": "Washington, D.C.",
-          "weather": null
+          "city": "New Delhi",
+          "weather": "40.07\u00b0C, clear sky"
         },
-        "financial_context": {
-          "currency_code": "USD",
-          "rate": 1,
-          "source": "ExchangeRate API"
-        },
+        "financial_context": null,
         "tools_used": [
           "news",
-          "fx"
+          "weather"
         ],
         "tools_skipped": [
-          "weather"
+          "fx"
         ]
       },
       "media": {
-        "query": "Bitcoin price prediction 2026",
+        "query": "ICC Cricket World Cup 2026",
         "images": [
           {
-            "id": 8919547,
-            "url": "https://www.pexels.com/photo/smartphone-bitcoin-notepad-and-eyeglasses-8919547/",
-            "photographer": "Leeloo The First",
-            "alt": "Flat lay of bitcoins, smartphone, eyeglasses, and clipboard with 2021 text, symbolizing cryptocurrency trends.",
+            "id": 30401060,
+            "url": "https://www.pexels.com/photo/cricket-ball-balanced-on-fingers-outdoors-30401060/",
+            "photographer": "Manoj Poosam",
+            "alt": "A red cricket ball balanced on fingers outdoors in Jabalpur, India.",
             "src": {
-              "url": "https://images.pexels.com/photos/8919547/pexels-photo-8919547.jpeg?auto=compress&cs=tinysrgb&h=650&w=940",
+              "url": "https://images.pexels.com/photos/30401060/pexels-photo-30401060.jpeg?auto=compress&cs=tinysrgb&h=650&w=940",
               "type": "image"
             }
           }
         ],
-        "total_results": 5136
+        "total_results": 8000
       },
       "memory_context": {
-        "query": "Bitcoin price prediction 2026",
+        "query": "ICC Cricket World Cup 2026",
         "briefs": [
           {
-            "brief_id": "brief-51d4b15a",
-            "topic": "Indian semiconductor policy 2026",
+            "brief_id": "brief-dd3e2a87",
+            "topic": "Indian monsoon 2026 forecast",
             "city": "New Delhi",
-            "created_at": "2026-06-04T13:28:34.132384+00:00",
-            "article_snippet": "Headline: Indian semiconductor policy 2026: Policy details and markets in focus as sector debate intensifies\n\nNew Delhi \u2014 Amid ongoing discussions around India\u2019s semiconductor policy for 2026, market observers note heightened attention on how the policy could shape investment and supply chains in the electronics sector. Analysts are watching for policy measures that might accelerate local manufact",
-            "distance": 0.6596287488937378
+            "created_at": "2026-06-10T18:51:34.252749+00:00",
+            "article_snippet": "Headline: Monsoon 2026 forecast released; New Delhi swelters as heat persists\n\nNew Delhi \u2014 Meteorological agencies have released the forecast for the 2026 Indian monsoon, with analysts watching for potential impacts on agriculture, water resources, and energy demand. Specific projections and regional nuances were not detailed in the brief, leaving farmers and markets awaiting more granular guidanc",
+            "distance": 0.6320972442626953
           },
           {
-            "brief_id": "brief-cc354167",
-            "topic": "Indian semiconductor policy 2026",
+            "brief_id": "brief-183443ba",
+            "topic": "RBI repo rate decision 2026",
             "city": "New Delhi",
-            "created_at": "2026-06-04T13:31:39.097315+00:00",
-            "article_snippet": "Headline: India\u2019s semiconductor policy 2026 under spotlight as markets reel from rout; policy details and investment impact analyzed\n\nNew Delhi \u2014 With discussions around India\u2019s semiconductor policy for 2026 continuing to unfold, analysts say the policy framework could influence investment flows and supply-chain realignments in the sector. The latest market action on D-Street added a backdrop of v",
-            "distance": 0.6869359016418457
+            "created_at": "2026-06-10T18:47:32.397328+00:00",
+            "article_snippet": "Headline: RBI Exercises Patience on Repo Rate in 2026, Markets Watch\n\nNew Delhi \u2014 The RBI appears to keep borrowing costs steady for now, signaling a patient approach to the 2026 repo rate decision. The stance suggests policymakers are balancing inflation risks with growth considerations as markets monitor upcoming data and global cues.\n\nForeign exchange markets show the rupee\u2019s current trajectory",
+            "distance": 0.6449276208877563
           },
           {
-            "brief_id": "brief-76faa448",
-            "topic": "Indian semiconductor policy 2026",
+            "brief_id": "brief-6dfc2561",
+            "topic": "Renewable energy adoption India 2026",
             "city": "New Delhi",
-            "created_at": "2026-06-02T20:33:07.612831+00:00",
-            "article_snippet": "Headline: Underlying momentum in industrial sector intact, FinMin report says; potential boost for semiconductor policy 2026\n\nNew Delhi, India \u2014 A Finance Ministry review indicates that momentum in the industrial sector remains intact and is poised to receive additional support, a backdrop that may influence considerations around India\u2019s semiconductor policy for 2026. The report highlights continu",
-            "distance": 0.747184157371521
+            "created_at": "2026-06-10T18:52:43.054376+00:00",
+            "article_snippet": "Headline: Renewable energy adoption in India 2026: brief provides limited new details\n\nNew Delhi \u2014 The latest briefing on renewable energy adoption in India for 2026 offers little in the way of new policy specifics or adoption milestones. The primary news item accompanying the dossier is a market forecast on the cloud kitchen sector, not on renewables, leaving analysts with few concrete data point",
+            "distance": 0.6527414321899414
           }
         ],
         "count": 3
       },
       "routing_decision": {
         "use_news": true,
-        "use_weather": false,
-        "use_fx": true,
+        "use_weather": true,
+        "use_fx": false,
         "use_media": true,
-        "reasoning": "Bitcoin price prediction for 2026 is a finance/markets topic best supported by news coverage and FX data; weather is irrelevant and media helps visualize."
+        "reasoning": "ICC World Cup is an outdoor event across venues; include news, weather, and imagery; currency data is not essential for a concise brief."
       }
     },
-    "timestamp": "2026-06-08T18:20:06.844124Z"
+    "timestamp": "2026-06-10T18:55:15.787436Z"
   }
 ]
