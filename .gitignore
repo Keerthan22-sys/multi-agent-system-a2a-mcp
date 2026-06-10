@@ -12,3 +12,4 @@ __pycache__
 
 synapse/memory_store/
 synapse/conversations/
+evals/results/

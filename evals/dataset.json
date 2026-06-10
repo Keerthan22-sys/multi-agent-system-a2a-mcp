@@ -1,0 +1,142 @@
+[
+  {
+    "id": "fin-001",
+    "topic": "Indian stock market trends 2026",
+    "expected_city": "New Delhi",
+    "rubric_hints": "Should cite specific indices (Sensex, Nifty), real percentage moves, or named sectors. Avoid generic 'markets are volatile' statements.",
+    "tags": ["finance", "india", "markets"]
+  },
+  {
+    "id": "fin-002",
+    "topic": "Bitcoin price prediction 2026",
+    "expected_city": "Washington",
+    "rubric_hints": "Should NOT make specific price predictions unless explicitly in source. Faithfulness should penalize invented price targets. Specificity rewards real exchange rates and regulatory mentions.",
+    "tags": ["finance", "crypto"]
+  },
+  {
+    "id": "fin-003",
+    "topic": "USD INR exchange rate volatility 2026",
+    "expected_city": "New Delhi",
+    "rubric_hints": "Specificity should reward mentioning the actual current rate from source. Faithfulness should check that any historical comparisons are grounded.",
+    "tags": ["finance", "fx", "india"]
+  },
+  {
+    "id": "fin-004",
+    "topic": "RBI repo rate decision 2026",
+    "expected_city": "New Delhi",
+    "rubric_hints": "Should mention specific rate numbers if present in source. Avoid vague 'central bank actions' language.",
+    "tags": ["finance", "policy", "india"]
+  },
+  {
+    "id": "tech-001",
+    "topic": "Indian semiconductor manufacturing 2026",
+    "expected_city": "New Delhi",
+    "rubric_hints": "Should reference specific companies (Tata, Vedanta, Micron), the India Semiconductor Mission, or fab locations. Generic 'India is investing in chips' scores low on specificity.",
+    "tags": ["tech", "india", "policy"]
+  },
+  {
+    "id": "tech-002",
+    "topic": "AI regulation in India 2026",
+    "expected_city": "New Delhi",
+    "rubric_hints": "Should mention specific frameworks (Digital India Act, NITI Aayog) or recent announcements. Avoid generic 'India is working on AI laws' statements.",
+    "tags": ["tech", "india", "policy"]
+  },
+  {
+    "id": "tech-003",
+    "topic": "Quantum computing breakthroughs 2026",
+    "expected_city": "Washington",
+    "rubric_hints": "Should cite specific companies (IBM, Google, IonQ) or qubit counts if in source. Penalize hand-wavy 'quantum is the future' content.",
+    "tags": ["tech", "research"]
+  },
+  {
+    "id": "tech-004",
+    "topic": "Open source LLM developments 2026",
+    "expected_city": "Washington",
+    "rubric_hints": "Should mention specific models (Llama, Mistral, DeepSeek) or licenses. Coverage low if brief doesn't address recent releases.",
+    "tags": ["tech", "ai"]
+  },
+  {
+    "id": "geo-001",
+    "topic": "India China border tensions 2026",
+    "expected_city": "New Delhi",
+    "rubric_hints": "Should reference specific regions (Ladakh, Arunachal) or recent diplomatic meetings. Avoid generic 'tensions continue' framing.",
+    "tags": ["geopolitics", "india", "china"]
+  },
+  {
+    "id": "geo-002",
+    "topic": "South China Sea developments",
+    "expected_city": "Manila",
+    "rubric_hints": "Should mention specific countries beyond China (Philippines, Vietnam) or specific incidents. Generic 'territorial disputes' content scores low.",
+    "tags": ["geopolitics", "asia"]
+  },
+  {
+    "id": "geo-003",
+    "topic": "EU AI Act enforcement 2026",
+    "expected_city": "Brussels",
+    "rubric_hints": "Should reference specific provisions or risk tiers if in source. Should NOT invent specific fines or enforcement actions.",
+    "tags": ["geopolitics", "policy", "eu"]
+  },
+  {
+    "id": "clim-001",
+    "topic": "Indian monsoon 2026 forecast",
+    "expected_city": "New Delhi",
+    "rubric_hints": "Should cite specific weather data from source (real temperatures, monsoon timing). Weather data MUST appear in the 'About the place' section.",
+    "tags": ["climate", "india", "weather"]
+  },
+  {
+    "id": "clim-002",
+    "topic": "Climate change impact on Indian agriculture",
+    "expected_city": "New Delhi",
+    "rubric_hints": "Should reference specific crops (rice, wheat) or specific states. Avoid generic 'agriculture is affected' statements.",
+    "tags": ["climate", "india", "agriculture"]
+  },
+  {
+    "id": "clim-003",
+    "topic": "Renewable energy adoption India 2026",
+    "expected_city": "New Delhi",
+    "rubric_hints": "Should mention specific targets (500 GW), companies (Adani Green, Tata Power), or projects. Reject vague 'India is going green' content.",
+    "tags": ["climate", "india", "energy"]
+  },
+  {
+    "id": "pol-001",
+    "topic": "Indian income tax reforms 2026",
+    "expected_city": "New Delhi",
+    "rubric_hints": "Should mention specific sections (80C, 80D), regimes (old vs new), or amounts if in source. Penalize generic 'taxes are changing' framing.",
+    "tags": ["policy", "india", "tax"]
+  },
+  {
+    "id": "pol-002",
+    "topic": "GST changes India 2026",
+    "expected_city": "New Delhi",
+    "rubric_hints": "Should mention specific GST slabs, rates, or affected sectors. Coverage low if brief doesn't reference the GST Council.",
+    "tags": ["policy", "india", "tax"]
+  },
+  {
+    "id": "pol-003",
+    "topic": "Digital India initiative progress",
+    "expected_city": "New Delhi",
+    "rubric_hints": "Should reference specific programs (UPI, Aadhaar, ONDC) or metrics. Generic 'digital transformation' content scores low.",
+    "tags": ["policy", "india", "tech"]
+  },
+  {
+    "id": "ent-001",
+    "topic": "Bollywood box office trends 2026",
+    "expected_city": "Mumbai",
+    "rubric_hints": "Source data is often sparse for entertainment topics. Faithfulness should reward saying 'Not available' when source lacks data. Penalize invented film titles or box office numbers.",
+    "tags": ["entertainment", "india"]
+  },
+  {
+    "id": "ent-002",
+    "topic": "K-pop concerts in Bangkok 2026",
+    "expected_city": "Bangkok",
+    "rubric_hints": "Source is likely sparse. Should NOT invent specific groups, dates, or venues. Faithfulness rewards honest 'Not available' acknowledgment.",
+    "tags": ["entertainment", "asia"]
+  },
+  {
+    "id": "spo-001",
+    "topic": "ICC Cricket World Cup 2026",
+    "expected_city": "New Delhi",
+    "rubric_hints": "Should mention specific teams, players, or scheduled matches if in source. Avoid generic 'cricket is popular' filler.",
+    "tags": ["sports", "cricket"]
+  }
+]
