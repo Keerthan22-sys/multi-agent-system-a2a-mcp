@@ -1,4 +1,4 @@
-# Task 10 + 12 + 13 + 14 + 15: Streamlit UI — now traced (Day 6).
+# Task 10 + 12 + 13 + 14 + 15 + 17: Streamlit UI — now shows critique refinement (Day 8).
 from synapse.tracing import setup_tracing, tracer
 setup_tracing("ui")
 
@@ -109,6 +109,11 @@ for key, default in [
     ("topic", ""), ("city", ""),
     ("routing_decision", None), ("pending_pivot", None),
     ("prefilled_topic", ""),
+    # NEW (Day 8)
+    ("revision_count", 0),
+    ("critique_history", []),
+    ("critic_enabled", True),
+    ("approved_on_attempt", 1),
 ]:
     if key not in st.session_state:
         st.session_state[key] = default
@@ -125,6 +130,9 @@ def _hydrate_from_conversation(conversation_id: str):
     st.session_state["city"] = conv.get("city", "")
     st.session_state["memory_used"] = 0
     st.session_state["pending_pivot"] = None
+    # Critique history is ephemeral — only available right after initial generation.
+    st.session_state["revision_count"] = 0
+    st.session_state["critique_history"] = []
     try:
         st.session_state["initial_image_url"] = (
             conv["initial_payload"]["media"]["images"][0]["src"]["url"]
@@ -146,6 +154,8 @@ def _reset_session(keep_prefilled_topic: str = ""):
     st.session_state["routing_decision"] = None
     st.session_state["pending_pivot"] = None
     st.session_state["prefilled_topic"] = keep_prefilled_topic
+    st.session_state["revision_count"] = 0
+    st.session_state["critique_history"] = []
 
 
 def _format_routing_line(routing: dict) -> str:
@@ -160,16 +170,42 @@ def _format_routing_line(routing: dict) -> str:
     return " · ".join(parts)
 
 
+def _render_critique_history(history: list):
+    """NEW (Day 8): Render the critique loop's history as a stack of expanders."""
+    if not history:
+        return
+    for round_data in history:
+        attempt = round_data.get("attempt", "?")
+        decision = round_data.get("decision", "?")
+        issues = round_data.get("issues", [])
+        emoji = "✅" if decision == "approve" else "🔄"
+        label = (
+            f"{emoji} Round {attempt}: {decision.upper()}"
+            + (f" — {len(issues)} issue(s) flagged" if issues else "")
+        )
+        with st.expander(label, expanded=False):
+            reasoning = round_data.get("reasoning", "")
+            if reasoning:
+                st.caption(f"_Critic's reasoning:_ {reasoning}")
+            if issues:
+                st.markdown("**Issues flagged:**")
+                for issue in issues:
+                    st.markdown(f"- {issue}")
+            excerpt = round_data.get("draft_excerpt", "")
+            if excerpt:
+                st.markdown("**Draft excerpt at this round:**")
+                st.code(excerpt, language="markdown")
+
+
 st.set_page_config(page_title="SYNAPSE", layout="wide")
 st.title("SYNAPSE — Context-Aware Reports")
 
 with st.sidebar:
-    # NEW: Phoenix link at top of sidebar
     st.link_button(
         "🔭 View traces in Phoenix",
         PHOENIX_UI_URL,
         use_container_width=True,
-        help="Opens the Phoenix observability dashboard in a new tab",
+        help="Opens the Phoenix observability dashboard",
     )
     st.divider()
 
@@ -250,13 +286,25 @@ if st.session_state["active_conversation_id"] is None:
                     st.write(f"🧠 Memory: found {mem_count} related past brief(s)")
                 else:
                     st.write("🧠 Memory: no related past briefs")
-                st.write("✍️ Publisher: generating brief + starting conversation...")
+                st.write("✍️ Publisher: drafting + critiquing + finalizing...")
                 pub_data = run_publisher_initial(scout_data)
+                # NEW (Day 8): announce critique outcome inline
+                rev = pub_data.get("revision_count", 0)
+                if pub_data.get("critic_enabled", True):
+                    if rev == 0:
+                        st.write("👀 Critic: approved on first draft.")
+                    else:
+                        st.write(
+                            f"👀 Critic: requested {rev} revision(s); "
+                            f"approved on attempt {pub_data.get('approved_on_attempt', '?')}."
+                        )
+                else:
+                    st.write("👀 Critic: disabled (env var).")
                 status.update(label="Done", state="complete", expanded=False)
 
             st.info(
                 f"📊 [View this run's traces in Phoenix]({PHOENIX_UI_URL})  ·  "
-                f"Look for the most recent traces under projects → `synapse`"
+                f"Look under projects → `synapse`"
             )
 
             st.session_state["active_conversation_id"] = pub_data["conversation_id"]
@@ -264,6 +312,11 @@ if st.session_state["active_conversation_id"] is None:
             st.session_state["city"] = city_guess
             st.session_state["memory_used"] = pub_data.get("memory_used", 0)
             st.session_state["routing_decision"] = routing
+            # NEW (Day 8)
+            st.session_state["critic_enabled"] = pub_data.get("critic_enabled", True)
+            st.session_state["revision_count"] = pub_data.get("revision_count", 0)
+            st.session_state["critique_history"] = pub_data.get("critique_history", [])
+            st.session_state["approved_on_attempt"] = pub_data.get("approved_on_attempt", 1)
             try:
                 st.session_state["initial_image_url"] = (
                     scout_data["media"]["images"][0]["src"]["url"]
@@ -289,6 +342,21 @@ else:
         if st.button("End", use_container_width=True):
             _reset_session()
             st.rerun()
+
+    # NEW (Day 8): Critique badges & history (only shown for the current freshly-generated brief)
+    if st.session_state["critique_history"]:
+        badge_cols = st.columns([1, 1, 4])
+        if st.session_state["revision_count"] > 0:
+            badge_cols[0].markdown(
+                f"🔄 **Refined {st.session_state['revision_count']}×**"
+            )
+        else:
+            badge_cols[0].markdown("✅ **Approved on first draft**")
+        badge_cols[1].markdown(
+            f"👀 _Approved on attempt {st.session_state['approved_on_attempt']}_"
+        )
+        with st.expander("🧐 View critique history", expanded=False):
+            _render_critique_history(st.session_state["critique_history"])
 
     if st.session_state["memory_used"] > 0:
         st.success(

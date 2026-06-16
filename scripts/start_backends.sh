@@ -13,7 +13,7 @@ fi
 
 trap 'kill 0' EXIT
 
-# Phoenix (Day 6): start first so traces start landing immediately
+# Phoenix (Day 6)
 echo "[start] Launching Phoenix on http://localhost:6006 ..."
 phoenix serve &
 sleep 3
@@ -25,7 +25,8 @@ python mcp-servers/media-engine/server.py &
 python mcp-servers/memory/server.py &         # Day 3
 python mcp-servers/conversation/server.py &   # Day 4
 python mcp-servers/router/server.py &         # Day 5
-python mcp-servers/eval/server.py &           # NEW: Day 7
+python mcp-servers/eval/server.py &           # Day 7
+python mcp-servers/critic/server.py &         # NEW: Day 8
 
 # Agents
 python agents/contextualist_agent/main.py &
@@ -35,4 +36,5 @@ python agents/publisher_agent/main.py &
 echo "[start] All services launched. Phoenix UI at http://localhost:6006"
 echo "[start] Streamlit:  streamlit run ui/app.py"
 echo "[start] Run evals:  python evals/run_eval.py"
+echo "[start] Critic toggle: SYNAPSE_ENABLE_CRITIC=false (default true)"
 wait

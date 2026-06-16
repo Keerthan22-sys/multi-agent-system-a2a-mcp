@@ -23,7 +23,14 @@ def get_currency_code(location: str) -> dict:
             response = requests.get(url, timeout=10)
 
         if response.status_code == 200:
-            data = response.json()[0]
+            payload = response.json()
+            if not isinstance(payload, list) or not payload:
+                return {
+                    "error": f"Could not find currency for '{location}'",
+                    "fallback": "USD",
+                    "currency_code": "USD",
+                }
+            data = payload[0]
             currencies = data.get("currencies", {})
             if currencies:
                 code = list(currencies.keys())[0]
@@ -32,11 +39,15 @@ def get_currency_code(location: str) -> dict:
                     "currency_code": code,
                     "symbol": currencies[code].get("symbol")
                 }
-        
-        return {"error": f"Could not find currency for '{location}'", "fallback": "USD"}
+
+        return {
+            "error": f"Could not find currency for '{location}'",
+            "fallback": "USD",
+            "currency_code": "USD",
+        }
 
     except Exception as e:
-        return {"error": str(e), "fallback": "USD"}
+        return {"error": str(e), "fallback": "USD", "currency_code": "USD"}
 
 
 @mcp.tool
@@ -46,28 +57,52 @@ def get_fx_rate(location: str) -> dict:
     """
     exchange_api_key = os.getenv("EXCHANGE_RATE_API_KEY")
 
-    # Get currency code from provided helper function
     currency_info = get_currency_code(location)
-    target = currency_info['currency_code']
+    target = currency_info.get("currency_code") or currency_info.get("fallback", "USD")
+
+    if target == "USD":
+        return {
+            "currency_code": "USD",
+            "rate": 1.0,
+            "source": "fallback",
+            **({"lookup_error": currency_info["error"]} if currency_info.get("error") else {}),
+        }
+
+    if not exchange_api_key:
+        return {
+            "error": "EXCHANGE_RATE_API_KEY not configured",
+            "currency_code": target,
+            "fallback": "USD",
+        }
 
     url = f"https://v6.exchangerate-api.com/v6/{exchange_api_key}/pair/{target}/USD"
-    
+
     try:
         response = requests.get(url, timeout=10)
-        
-        # Handle API errors
         if response.status_code != 200:
-            return {"error": f"Could not find currency for '{location}'", "fallback": "USD"}
+            return {
+                "error": f"Exchange rate lookup failed for '{location}'",
+                "currency_code": target,
+                "fallback": "USD",
+            }
 
         data = response.json()
+        if data.get("result") != "success":
+            return {
+                "error": data.get("error-type", "Exchange rate lookup failed"),
+                "currency_code": target,
+                "fallback": "USD",
+            }
+
         return {
-            "currency_code": currency_info['currency_code'],
-            "rate": data['conversion_rate'],
-            "source": "ExchangeRate API"
+            "currency_code": target,
+            "rate": data["conversion_rate"],
+            "source": "ExchangeRate API",
+            **({"lookup_error": currency_info["error"]} if currency_info.get("error") else {}),
         }
 
     except Exception as e:
-        return {"error": str(e), "fallback": "USD"}
+        return {"error": str(e), "currency_code": target, "fallback": "USD"}
 
 
 if __name__ == "__main__":
