@@ -15,6 +15,7 @@ from synapse import cache as synapse_cache
 from synapse.costs import (
     extract_usage, empty_usage, accumulate, format_cost_inr, USD_TO_INR,
 )
+from synapse.protocol.post_office import mode as mailbox_mode
 
 load_dotenv()
 
@@ -295,6 +296,25 @@ with st.sidebar:
         )
     else:
         st.caption("⚡ Redis cache offline")
+
+    # Day 10: show the mailbox backend mode.
+    _mailbox_mode = mailbox_mode()
+    if _mailbox_mode == "redis":
+        st.caption("📬 Mailbox: Redis pub/sub (live)")
+    elif _mailbox_mode == "file":
+        st.caption("📬 Mailbox: JSON file (Redis fallback)")
+    else:
+        try:
+            import redis
+            r = redis.from_url(
+                os.getenv("REDIS_URL", "redis://localhost:6379"),
+                decode_responses=True, socket_connect_timeout=1,
+            )
+            r.ping()
+            st.caption("📬 Mailbox: Redis pub/sub (live)")
+        except Exception:
+            st.caption("📬 Mailbox: JSON file (Redis fallback)")
+
     st.divider()
 
     st.header("💬 Conversations")

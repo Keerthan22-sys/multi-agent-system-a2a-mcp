@@ -1,4 +1,7 @@
-# Task 7 + 14 + 15 + 18: Contextualist — now reports cache hits upstream (Day 9).
+# Task 7 + 14 + 15 + 18 + 19: Contextualist Agent (Day 10).
+# Publish-only role: sends responses via send_message but never calls read_messages.
+# Therefore no init_mailbox() needed — the post_office module handles
+# publish without a subscriber being set up in this process.
 from synapse.tracing import setup_tracing, tracer
 setup_tracing("contextualist-agent")
 
@@ -8,7 +11,7 @@ import json
 from fastmcp import FastMCP, Client
 from contextlib import AsyncExitStack
 
-from synapse.protocol.post_office import send_message, read_messages
+from synapse.protocol.post_office import send_message
 
 mcp = FastMCP("Contextualist Agent")
 
@@ -71,15 +74,11 @@ async def contextualize(
             fx = data_by_key.get("fx")
             tools_used = list(data_by_key.keys())
 
-        # NEW (Day 9): extract cache hits from each tool response if present
         cache_hits = {
             "news": bool(news.get("_cache_hit")) if isinstance(news, dict) else False,
             "weather": bool(weather.get("_cache_hit")) if isinstance(weather, dict) else False,
             "fx": bool(fx.get("_cache_hit")) if isinstance(fx, dict) else False,
         }
-        span.set_attribute("cache_hits.news", cache_hits["news"])
-        span.set_attribute("cache_hits.weather", cache_hits["weather"])
-        span.set_attribute("cache_hits.fx", cache_hits["fx"])
 
         signal = {
             "topic": topic,
@@ -94,9 +93,12 @@ async def contextualize(
             "financial_context": fx,
             "tools_used": tools_used,
             "tools_skipped": tools_skipped,
-            "cache_hits": cache_hits,  # NEW (Day 9)
+            "cache_hits": cache_hits,
         }
 
+        # Send response to Scout via the post office.
+        # Day 10: this publishes to Redis channel 'synapse:mailbox:scout'
+        # (or appends to post_office.json if Redis is unavailable).
         send_message({
             "sender": "contextualist",
             "recipient": "scout",
@@ -108,4 +110,5 @@ async def contextualize(
 
 
 if __name__ == "__main__":
+    # No init_mailbox call: this agent publishes but never reads.
     mcp.run(transport="http", host="0.0.0.0", port=8000)
