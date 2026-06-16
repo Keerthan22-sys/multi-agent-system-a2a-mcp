@@ -2,6 +2,7 @@ import os
 import requests
 from fastmcp import FastMCP
 from dotenv import load_dotenv
+from synapse import cache
 
 load_dotenv()
 
@@ -55,54 +56,63 @@ def get_fx_rate(location: str) -> dict:
     """
     Get FX rate between two currencies.
     """
+    cache_params = {"location": location.lower().strip()}
+    cached = cache.get_cached("fx", cache_params)
+    if cached:
+        cached["_cache_hit"] = True
+        return cached
+
     exchange_api_key = os.getenv("EXCHANGE_RATE_API_KEY")
 
     currency_info = get_currency_code(location)
     target = currency_info.get("currency_code") or currency_info.get("fallback", "USD")
 
     if target == "USD":
-        return {
+        result = {
             "currency_code": "USD",
             "rate": 1.0,
             "source": "fallback",
             **({"lookup_error": currency_info["error"]} if currency_info.get("error") else {}),
         }
-
-    if not exchange_api_key:
+    elif not exchange_api_key:
         return {
             "error": "EXCHANGE_RATE_API_KEY not configured",
             "currency_code": target,
             "fallback": "USD",
         }
+    else:
+        url = f"https://v6.exchangerate-api.com/v6/{exchange_api_key}/pair/{target}/USD"
 
-    url = f"https://v6.exchangerate-api.com/v6/{exchange_api_key}/pair/{target}/USD"
+        try:
+            response = requests.get(url, timeout=10)
+            if response.status_code != 200:
+                result = {
+                    "error": f"Exchange rate lookup failed for '{location}'",
+                    "currency_code": target,
+                    "fallback": "USD",
+                }
+            else:
+                data = response.json()
+                if data.get("result") != "success":
+                    result = {
+                        "error": data.get("error-type", "Exchange rate lookup failed"),
+                        "currency_code": target,
+                        "fallback": "USD",
+                    }
+                else:
+                    result = {
+                        "currency_code": target,
+                        "rate": data["conversion_rate"],
+                        "source": "ExchangeRate API",
+                        **({"lookup_error": currency_info["error"]} if currency_info.get("error") else {}),
+                    }
 
-    try:
-        response = requests.get(url, timeout=10)
-        if response.status_code != 200:
-            return {
-                "error": f"Exchange rate lookup failed for '{location}'",
-                "currency_code": target,
-                "fallback": "USD",
-            }
+        except Exception as e:
+            result = {"error": str(e), "currency_code": target, "fallback": "USD"}
 
-        data = response.json()
-        if data.get("result") != "success":
-            return {
-                "error": data.get("error-type", "Exchange rate lookup failed"),
-                "currency_code": target,
-                "fallback": "USD",
-            }
-
-        return {
-            "currency_code": target,
-            "rate": data["conversion_rate"],
-            "source": "ExchangeRate API",
-            **({"lookup_error": currency_info["error"]} if currency_info.get("error") else {}),
-        }
-
-    except Exception as e:
-        return {"error": str(e), "currency_code": target, "fallback": "USD"}
+    cache.set_cached("fx", cache_params, result, ttl_seconds=cache.TTL["fx"])
+    result["_cache_hit"] = False
+    return result
 
 
 if __name__ == "__main__":

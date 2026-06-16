@@ -1,5 +1,4 @@
-# Task 9 + 12 + 13 + 15 + 17: Publisher Agent — now with self-critique loop (Day 8).
-# setup_tracing() MUST run before importing OpenAI for auto-instrumentation to work.
+# Task 9 + 12 + 13 + 15 + 17 + 18: Publisher Agent — now tracks total LLM cost (Day 9).
 from synapse.tracing import setup_tracing, tracer
 setup_tracing("publisher-agent")
 
@@ -9,16 +8,17 @@ import asyncio
 from fastmcp import Client, FastMCP
 from dotenv import load_dotenv
 
+from synapse.costs import extract_usage, empty_usage, accumulate
+
 load_dotenv()
 
 mcp = FastMCP("Publisher Agent")
 
 MEMORY_URL = "http://0.0.0.0:8006/mcp"
 CONVERSATION_URL = "http://0.0.0.0:8007/mcp"
-CRITIC_URL = "http://0.0.0.0:8010/mcp"  # NEW: Day 8
+CRITIC_URL = "http://0.0.0.0:8010/mcp"
 MAX_TURNS_IN_PROMPT = 10
 
-# Day 8 critique controls
 CRITIC_ENABLED = os.getenv("SYNAPSE_ENABLE_CRITIC", "true").lower() == "true"
 MAX_REVISIONS = int(os.getenv("SYNAPSE_MAX_REVISIONS", "2"))
 
@@ -50,8 +50,8 @@ def _render_turns_for_prompt(turns: list) -> str:
     return "\n\n".join(lines)
 
 
-def _openai_call(prompt: str, max_tokens: int = 1500) -> str:
-    """Auto-instrumented by OpenInference — token counts flow to Phoenix."""
+def _openai_call_with_usage(prompt: str, max_tokens: int = 1500) -> tuple[str, dict]:
+    """LLM call that also returns extracted usage info."""
     from openai import OpenAI
     client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
     response = client.responses.create(
@@ -60,7 +60,8 @@ def _openai_call(prompt: str, max_tokens: int = 1500) -> str:
         max_output_tokens=max_tokens,
         reasoning={"effort": "low"},
     )
-    return response.output_text.strip()
+    usage = extract_usage(response, model="gpt-5-nano")
+    return response.output_text.strip(), usage
 
 
 def _build_initial_prompt(payload_for_prompt: dict, memory_section: str) -> str:
@@ -87,7 +88,6 @@ Rules:
 
 
 def _build_revision_prompt(payload_for_prompt: dict, current_draft: str, issues: list) -> str:
-    """Construct a revision prompt that focuses the LLM on the editor's specific feedback."""
     issues_text = "\n".join(f"  - {issue}" for issue in issues)
     return f"""
 You are revising a news brief based on specific editor feedback.
@@ -108,15 +108,13 @@ structure (headline; 2-3 paragraphs; "Why it matters" section; "About the place
 of news" section with weather and conversion rate).
 
 Critical rules:
-- Stay grounded in the source data. Do NOT invent facts to fix specificity issues —
-  if the data is sparse, say "Not available" instead.
-- Keep what was already working from the current draft. Don't rewrite needlessly.
+- Stay grounded in the source data. Do NOT invent facts to fix specificity issues.
+- Keep what was already working from the current draft.
 - If an issue contradicts the source data, prefer the source data.
 """
 
 
 async def _critic_review(topic: str, draft: str, payload_for_prompt: dict) -> dict:
-    """Call the Critic. Returns review dict; on failure returns a safe approve."""
     try:
         async with Client(CRITIC_URL) as critic_client:
             res = await critic_client.call_tool(
@@ -129,22 +127,22 @@ async def _critic_review(topic: str, draft: str, payload_for_prompt: dict) -> di
             )
             return res.data
     except Exception as e:
-        print(f"[publisher] Critic unavailable, shipping draft: {e}")
-        return {"decision": "approve", "issues": [], "reasoning": f"Critic unreachable: {e}"}
+        print(f"[publisher] Critic unavailable: {e}")
+        return {
+            "decision": "approve", "issues": [],
+            "reasoning": f"Critic unreachable: {e}",
+            "_usage": empty_usage(),
+        }
 
 
 @mcp.tool
 async def publish_brief(payload: dict) -> dict:
-    """
-    Generate the INITIAL brief for a new topic.
-    Internally runs: draft → critique → (optional) revise loop → ship.
-    """
+    """Generate the INITIAL brief with internal critique loop + cost tracking."""
     with tracer.start_as_current_span("publisher.publish_brief") as root:
         topic = payload.get("topic", "Unknown")
         root.set_attribute("topic", topic)
         root.set_attribute("city", payload.get("location", ""))
         root.set_attribute("critic_enabled", CRITIC_ENABLED)
-        root.set_attribute("max_revisions", MAX_REVISIONS)
 
         memory_context = payload.get("memory_context", {})
         payload_for_prompt = {k: v for k, v in payload.items() if k != "memory_context"}
@@ -152,25 +150,47 @@ async def publish_brief(payload: dict) -> dict:
         memory_hits = len(memory_context.get("briefs", []))
         root.set_attribute("memory_hits", memory_hits)
 
+        # NEW (Day 9): consolidated usage accumulator
+        usage_total = {
+            "input_tokens": 0, "output_tokens": 0, "total_tokens": 0,
+            "cost_usd": 0.0, "calls": 0,
+            "by_source": {"publisher": empty_usage(), "critic": empty_usage(),
+                          "router": empty_usage()},
+        }
+        # Track usage from Router (came in with the payload via Scout)
+        router_usage = (
+            (payload.get("routing_decision") or {}).get("_usage") or empty_usage()
+        )
+        accumulate(usage_total, router_usage)
+        usage_total["by_source"]["router"] = router_usage
+
         # ---------- Stage 1: initial draft ----------
         initial_prompt = _build_initial_prompt(payload_for_prompt, memory_section)
         with tracer.start_as_current_span("publisher.llm_initial_draft"):
-            draft = _openai_call(initial_prompt, max_tokens=1500)
+            draft, draft_usage = _openai_call_with_usage(initial_prompt, max_tokens=1500)
+        accumulate(usage_total, draft_usage)
+        accumulate(usage_total["by_source"]["publisher"], draft_usage)
 
         # ---------- Stage 2: critique loop ----------
         critique_history = []
         revision_count = 0
         approved_on_attempt = 1
-        final_decision = "approve"  # default if critic disabled
+        final_decision = "approve"
 
         if CRITIC_ENABLED:
-            for attempt in range(MAX_REVISIONS + 1):  # +1 because first attempt is just review
+            for attempt in range(MAX_REVISIONS + 1):
                 with tracer.start_as_current_span("publisher.critique_round") as round_span:
                     round_span.set_attribute("attempt", attempt + 1)
 
                     review = await _critic_review(topic, draft, payload_for_prompt)
                     decision = review.get("decision", "approve")
                     issues = review.get("issues", [])
+
+                    # Accumulate critic's usage
+                    critic_usage = review.get("_usage") or empty_usage()
+                    accumulate(usage_total, critic_usage)
+                    accumulate(usage_total["by_source"]["critic"], critic_usage)
+
                     round_span.set_attribute("decision", decision)
                     round_span.set_attribute("issue_count", len(issues))
 
@@ -187,27 +207,31 @@ async def publish_brief(payload: dict) -> dict:
                         approved_on_attempt = attempt + 1
                         break
 
-                    # Need revision, but did we exhaust the budget?
                     if attempt >= MAX_REVISIONS:
-                        # Out of attempts — ship the last draft anyway
                         approved_on_attempt = attempt + 1
                         break
 
-                    # Revise
                     revision_count += 1
                     revision_prompt = _build_revision_prompt(
                         payload_for_prompt, draft, issues
                     )
                     with tracer.start_as_current_span("publisher.llm_revise"):
-                        draft = _openai_call(revision_prompt, max_tokens=1500)
+                        draft, revise_usage = _openai_call_with_usage(
+                            revision_prompt, max_tokens=1500
+                        )
+                    accumulate(usage_total, revise_usage)
+                    accumulate(usage_total["by_source"]["publisher"], revise_usage)
 
         final_article = draft
         root.set_attribute("revision_count", revision_count)
         root.set_attribute("approved_on_attempt", approved_on_attempt)
-        root.set_attribute("final_decision", final_decision)
         root.set_attribute("article_length", len(final_article))
+        # NEW (Day 9): cost attributes
+        root.set_attribute("usage.total_tokens", usage_total["total_tokens"])
+        root.set_attribute("usage.calls", usage_total["calls"])
+        root.set_attribute("usage.cost_usd", round(usage_total["cost_usd"], 6))
 
-        # ---------- Stage 3: persist (memory + conversation) — unchanged ----------
+        # ---------- Stage 3: persist (unchanged) ----------
         brief_id = ""
         with tracer.start_as_current_span("publisher.memory_store") as mem_span:
             try:
@@ -223,9 +247,7 @@ async def publish_brief(payload: dict) -> dict:
                     )
                     brief_id = (mem_res.data or {}).get("brief_id", "")
                     mem_span.set_attribute("brief_id", brief_id)
-                    mem_span.set_attribute("stored", True)
             except Exception as e:
-                mem_span.set_attribute("stored", False)
                 mem_span.record_exception(e)
                 print(f"[publisher] Memory store failed: {e}")
 
@@ -247,7 +269,12 @@ async def publish_brief(payload: dict) -> dict:
                     conv_span.set_attribute("conversation_id", conversation_id)
             except Exception as e:
                 conv_span.record_exception(e)
-                print(f"[publisher] Conversation seed failed: {e}")
+
+        # NEW (Day 9): extract cache hit summary from the payload's context
+        cache_hits = (
+            payload.get("context", {}).get("cache_hits", {})
+            if isinstance(payload.get("context"), dict) else {}
+        )
 
         return {
             "article": final_article,
@@ -255,19 +282,19 @@ async def publish_brief(payload: dict) -> dict:
             "memory_used": memory_hits,
             "brief_id": brief_id,
             "conversation_id": conversation_id,
-            # NEW (Day 8)
             "critic_enabled": CRITIC_ENABLED,
             "revision_count": revision_count,
             "approved_on_attempt": approved_on_attempt,
             "critique_history": critique_history,
+            # NEW (Day 9)
+            "usage": usage_total,
+            "cache_hits": cache_hits,
         }
 
 
 @mcp.tool
 async def follow_up(conversation_id: str, user_question: str) -> dict:
-    """Answer a follow-up question within an existing conversation.
-    NOTE: critique loop is NOT applied to follow-ups — they're conversational
-    and should stay nimble. Critique remains scoped to initial briefs only."""
+    """Answer a follow-up. Tracks single-call usage."""
     with tracer.start_as_current_span("publisher.follow_up") as root:
         root.set_attribute("conversation_id", conversation_id)
         root.set_attribute("question_length", len(user_question))
@@ -279,12 +306,10 @@ async def follow_up(conversation_id: str, user_question: str) -> dict:
                 )
                 conversation = conv_res.data or {}
         if conversation.get("error"):
-            root.set_attribute("error", conversation["error"])
             return {"error": conversation["error"]}
 
         initial_payload = conversation.get("initial_payload", {})
         turns = conversation.get("turns", [])
-        root.set_attribute("turn_count_before", len(turns))
 
         async with Client(CONVERSATION_URL) as conv_client:
             await conv_client.call_tool(
@@ -311,8 +336,9 @@ Now write your next reply as Assistant. Be concise — usually 2-4 short
 paragraphs. Markdown formatting is fine.
 """
         with tracer.start_as_current_span("publisher.llm_followup"):
-            response_text = _openai_call(prompt, max_tokens=900)
+            response_text, usage = _openai_call_with_usage(prompt, max_tokens=900)
         root.set_attribute("response_length", len(response_text))
+        root.set_attribute("usage.total_tokens", usage["total_tokens"])
 
         async with Client(CONVERSATION_URL) as conv_client:
             await conv_client.call_tool(
@@ -324,6 +350,10 @@ paragraphs. Markdown formatting is fine.
             "conversation_id": conversation_id,
             "response": response_text,
             "turn_count": len(turns) + 2,
+            "usage": {  # NEW (Day 9)
+                **usage, "calls": 1,
+                "by_source": {"publisher": usage},
+            },
         }
 
 
