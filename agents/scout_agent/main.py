@@ -1,4 +1,4 @@
-# Task 8 + 12 + 14 + 15: Scout Agent — now traced (Day 6).
+# Task 8 + 12 + 14 + 15 + 19: Scout Agent — subscribes to Redis channel at startup (Day 10).
 from synapse.tracing import setup_tracing, tracer
 setup_tracing("scout-agent")
 
@@ -7,7 +7,10 @@ import json
 import time
 from fastmcp import FastMCP, Client
 from contextlib import AsyncExitStack
-from synapse.protocol.post_office import send_message, read_messages, clear_messages
+# NEW (Day 10): init_mailbox added to the imports
+from synapse.protocol.post_office import (
+    send_message, read_messages, clear_messages, init_mailbox
+)
 
 mcp = FastMCP("Scout Agent")
 
@@ -18,13 +21,19 @@ ROUTER_URL = "http://0.0.0.0:8008/mcp"
 
 
 def wait_for_response(task_id: str, timeout: int = 10):
+    """
+    Poll the buffered mailbox for our response.
+    With the Day 10 Redis backend, messages arrive in a background subscriber
+    thread and accumulate in the local buffer — read_messages drains it.
+    The polling interval still applies but is now satisfied much faster.
+    """
     start = time.time()
     while time.time() - start < timeout:
         messages = read_messages()
         for msg in messages:
             if msg.get("task_id") == task_id and msg.get("recipient") == "scout":
                 return msg
-        time.sleep(0.5)
+        time.sleep(0.2)  # Day 10: tighter poll since Redis delivery is near-instant
     return None
 
 
@@ -36,7 +45,6 @@ _ROUTING_DEFAULT = {
 
 @mcp.tool
 async def scout(topic: str, city: str, task_id: str = "task-1"):
-    """Orchestrate context, media, and memory — fully traced."""
     with tracer.start_as_current_span("scout.scout") as root:
         root.set_attribute("topic", topic)
         root.set_attribute("city", city)
@@ -45,7 +53,7 @@ async def scout(topic: str, city: str, task_id: str = "task-1"):
         clear_messages()
 
         async with AsyncExitStack() as stack:
-            # --- Step 1: routing ---
+            # Step 1: routing
             with tracer.start_as_current_span("scout.router_consult") as r_span:
                 routing = dict(_ROUTING_DEFAULT)
                 try:
@@ -57,14 +65,11 @@ async def scout(topic: str, city: str, task_id: str = "task-1"):
                 except Exception as e:
                     r_span.set_attribute("router_reachable", False)
                     r_span.record_exception(e)
-                    print(f"[scout] Router unavailable: {e}")
-                r_span.set_attribute("use_news", routing["use_news"])
-                r_span.set_attribute("use_weather", routing["use_weather"])
-                r_span.set_attribute("use_fx", routing["use_fx"])
-                r_span.set_attribute("use_media", routing["use_media"])
+                for k in ("use_news", "use_weather", "use_fx", "use_media"):
+                    r_span.set_attribute(k, routing[k])
                 r_span.set_attribute("reasoning", routing.get("reasoning", ""))
 
-            # --- Step 2: contextualize ---
+            # Step 2: contextualize
             with tracer.start_as_current_span("scout.contextualize_call") as c_span:
                 contextualist_client = await stack.enter_async_context(
                     Client(CONTEXTUALIST_URL)
@@ -82,7 +87,7 @@ async def scout(topic: str, city: str, task_id: str = "task-1"):
                 context = response["payload"] if response else {}
                 c_span.set_attribute("context_received", response is not None)
 
-            # --- Step 3: media ---
+            # Step 3: media
             media = {}
             if routing["use_media"]:
                 with tracer.start_as_current_span("scout.media_call") as m_span:
@@ -95,9 +100,8 @@ async def scout(topic: str, city: str, task_id: str = "task-1"):
                         m_span.set_attribute("media_returned", bool(media))
                     except Exception as e:
                         m_span.record_exception(e)
-                        print(f"[scout] Media fetch failed: {e}")
 
-            # --- Step 4: memory ---
+            # Step 4: memory
             with tracer.start_as_current_span("scout.memory_query") as mem_span:
                 memory_context = {"briefs": [], "count": 0}
                 try:
@@ -109,7 +113,6 @@ async def scout(topic: str, city: str, task_id: str = "task-1"):
                     mem_span.set_attribute("hits", memory_context.get("count", 0))
                 except Exception as e:
                     mem_span.record_exception(e)
-                    print(f"[scout] Memory query failed: {e}")
 
         final_signal = {
             "topic": topic,
@@ -120,7 +123,6 @@ async def scout(topic: str, city: str, task_id: str = "task-1"):
             "routing_decision": routing,
         }
 
-        # Top-level attributes — searchable in Phoenix
         root.set_attribute("memory_hits", memory_context.get("count", 0))
         root.set_attribute("tools_enabled",
                           sum(1 for k in ("use_news", "use_weather", "use_fx", "use_media")
@@ -135,4 +137,7 @@ async def scout(topic: str, city: str, task_id: str = "task-1"):
 
 
 if __name__ == "__main__":
+    # NEW (Day 10): subscribe to the scout mailbox channel BEFORE serving requests.
+    # If Redis is up, this connects the subscriber thread; if not, falls back to file mode.
+    init_mailbox("scout")
     mcp.run(transport="http", host="0.0.0.0", port=8004)
