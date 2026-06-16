@@ -5,11 +5,11 @@
     "task_id": "task-1",
     "status": "done",
     "payload": {
-      "topic": "ICC Cricket World Cup 2026",
-      "news_headline": "Hurricane Group Names rEvolution Worldwide Agency of Record for FISE Birmingham 2026, Global Action Sports Festival\u2019s U.S. Return",
+      "topic": "K-pop tour in Bangkok",
+      "news_headline": "The world's best cities for solo travel - as Manchester is named the UK's top-ranked destination",
       "location": {
-        "city": "New Delhi",
-        "weather": "40.07\u00b0C, clear sky"
+        "city": "Bangkok",
+        "weather": "30.53\u00b0C, overcast clouds"
       },
       "financial_context": null,
       "tools_used": [
@@ -20,7 +20,7 @@
         "fx"
       ]
     },
-    "timestamp": "2026-06-10T18:55:14.753746Z"
+    "timestamp": "2026-06-16T15:44:55.758078Z"
   },
   {
     "sender": "scout",
@@ -28,14 +28,14 @@
     "task_id": "task-1",
     "status": "done",
     "payload": {
-      "topic": "ICC Cricket World Cup 2026",
-      "location": "New Delhi",
+      "topic": "K-pop tour in Bangkok",
+      "location": "Bangkok",
       "context": {
-        "topic": "ICC Cricket World Cup 2026",
-        "news_headline": "Hurricane Group Names rEvolution Worldwide Agency of Record for FISE Birmingham 2026, Global Action Sports Festival\u2019s U.S. Return",
+        "topic": "K-pop tour in Bangkok",
+        "news_headline": "The world's best cities for solo travel - as Manchester is named the UK's top-ranked destination",
         "location": {
-          "city": "New Delhi",
-          "weather": "40.07\u00b0C, clear sky"
+          "city": "Bangkok",
+          "weather": "30.53\u00b0C, overcast clouds"
         },
         "financial_context": null,
         "tools_used": [
@@ -47,15 +47,15 @@
         ]
       },
       "media": {
-        "query": "ICC Cricket World Cup 2026",
+        "query": "K-pop tour in Bangkok",
         "images": [
           {
-            "id": 30401060,
-            "url": "https://www.pexels.com/photo/cricket-ball-balanced-on-fingers-outdoors-30401060/",
-            "photographer": "Manoj Poosam",
-            "alt": "A red cricket ball balanced on fingers outdoors in Jabalpur, India.",
+            "id": 24498511,
+            "url": "https://www.pexels.com/photo/modern-buildings-in-the-city-with-neon-billboards-24498511/",
+            "photographer": "Elina Volkova",
+            "alt": "Busy urban street scene with colorful illuminated billboard at night.",
             "src": {
-              "url": "https://images.pexels.com/photos/30401060/pexels-photo-30401060.jpeg?auto=compress&cs=tinysrgb&h=650&w=940",
+              "url": "https://images.pexels.com/photos/24498511/pexels-photo-24498511.jpeg?auto=compress&cs=tinysrgb&h=650&w=940",
               "type": "image"
             }
           }
@@ -63,23 +63,23 @@
         "total_results": 8000
       },
       "memory_context": {
-        "query": "ICC Cricket World Cup 2026",
+        "query": "K-pop tour in Bangkok",
         "briefs": [
           {
-            "brief_id": "brief-dd3e2a87",
-            "topic": "Indian monsoon 2026 forecast",
-            "city": "New Delhi",
-            "created_at": "2026-06-10T18:51:34.252749+00:00",
-            "article_snippet": "Headline: Monsoon 2026 forecast released; New Delhi swelters as heat persists\n\nNew Delhi \u2014 Meteorological agencies have released the forecast for the 2026 Indian monsoon, with analysts watching for potential impacts on agriculture, water resources, and energy demand. Specific projections and regional nuances were not detailed in the brief, leaving farmers and markets awaiting more granular guidanc",
-            "distance": 0.6320972442626953
+            "brief_id": "brief-c0422245",
+            "topic": "K-pop concerts in Bangkok 2026",
+            "city": "Bangkok",
+            "created_at": "2026-06-10T18:54:44.872498+00:00",
+            "article_snippet": "Headline: Bangkok Brace for 2026 K-pop Concert Wave as Ticket Pushes Surface\n\nBangkok is preparing for a wave of K-pop concerts slated for 2026, with organizers signaling strong demand from fans in the region. In related coverage, Singapore authorities have mobilised efforts around BTS concert ticket sales beginning June 3, highlighting the high level of coordination expected to accompany large-sc",
+            "distance": 0.27617645263671875
           },
           {
-            "brief_id": "brief-183443ba",
-            "topic": "RBI repo rate decision 2026",
+            "brief_id": "brief-7126a581",
+            "topic": "ICC Cricket World Cup 2026",
             "city": "New Delhi",
-            "created_at": "2026-06-10T18:47:32.397328+00:00",
-            "article_snippet": "Headline: RBI Exercises Patience on Repo Rate in 2026, Markets Watch\n\nNew Delhi \u2014 The RBI appears to keep borrowing costs steady for now, signaling a patient approach to the 2026 repo rate decision. The stance suggests policymakers are balancing inflation risks with growth considerations as markets monitor upcoming data and global cues.\n\nForeign exchange markets show the rupee\u2019s current trajectory",
-            "distance": 0.6449276208877563
+            "created_at": "2026-06-10T18:55:21.571659+00:00",
+            "article_snippet": "Headline: ICC Cricket World Cup 2026: New Delhi feature in coverage as heat persists\n\nNew Delhi is listed as the location for coverage related to the ICC Cricket World Cup 2026. The available data do not provide details on schedules, teams, or match venues. No financial context is available in the briefing.\n\nThe city is currently experiencing extreme heat, with a reported 40.07\u00b0C and clear skies. ",
+            "distance": 0.7977237105369568
           },
           {
             "brief_id": "brief-6dfc2561",
@@ -87,7 +87,7 @@
             "city": "New Delhi",
             "created_at": "2026-06-10T18:52:43.054376+00:00",
             "article_snippet": "Headline: Renewable energy adoption in India 2026: brief provides limited new details\n\nNew Delhi \u2014 The latest briefing on renewable energy adoption in India for 2026 offers little in the way of new policy specifics or adoption milestones. The primary news item accompanying the dossier is a market forecast on the cloud kitchen sector, not on renewables, leaving analysts with few concrete data point",
-            "distance": 0.6527414321899414
+            "distance": 0.8527263402938843
           }
         ],
         "count": 3
@@ -97,9 +97,9 @@
         "use_weather": true,
         "use_fx": false,
         "use_media": true,
-        "reasoning": "ICC World Cup is an outdoor event across venues; include news, weather, and imagery; currency data is not essential for a concise brief."
+        "reasoning": "The Bangkok-based K-pop tour topic benefits from local news, weather context, and a stock image for illustration."
       }
     },
-    "timestamp": "2026-06-10T18:55:15.787436Z"
+    "timestamp": "2026-06-16T15:44:56.578847Z"
   }
 ]
