@@ -1,4 +1,4 @@
-# Task 7 + 14 + 15: Contextualist Agent — now traced (Day 6).
+# Task 7 + 14 + 15 + 18: Contextualist — now reports cache hits upstream (Day 9).
 from synapse.tracing import setup_tracing, tracer
 setup_tracing("contextualist-agent")
 
@@ -25,16 +25,10 @@ async def contextualize(
     use_weather: bool = True,
     use_fx: bool = True,
 ):
-    """
-    Fetches contextual data for a topic and city, conditional on routing flags.
-    """
     with tracer.start_as_current_span("contextualist.contextualize") as span:
         span.set_attribute("topic", topic)
         span.set_attribute("city", city)
         span.set_attribute("task_id", task_id)
-        span.set_attribute("use_news", use_news)
-        span.set_attribute("use_weather", use_weather)
-        span.set_attribute("use_fx", use_fx)
 
         news, weather, fx = None, None, None
         tools_used, tools_skipped = [], []
@@ -64,10 +58,8 @@ async def contextualize(
             else:
                 tools_skipped.append("fx")
 
-            # Wrap the parallel call set in its own span so its latency is visible
             with tracer.start_as_current_span("contextualist.fetch_parallel") as fetch_span:
                 fetch_span.set_attribute("call_count", len(calls))
-                fetch_span.set_attribute("calls", ",".join(call_keys))
                 if calls:
                     results = await asyncio.gather(*calls)
                     data_by_key = {k: results[i].data for i, k in enumerate(call_keys)}
@@ -78,6 +70,16 @@ async def contextualize(
             weather = data_by_key.get("weather")
             fx = data_by_key.get("fx")
             tools_used = list(data_by_key.keys())
+
+        # NEW (Day 9): extract cache hits from each tool response if present
+        cache_hits = {
+            "news": bool(news.get("_cache_hit")) if isinstance(news, dict) else False,
+            "weather": bool(weather.get("_cache_hit")) if isinstance(weather, dict) else False,
+            "fx": bool(fx.get("_cache_hit")) if isinstance(fx, dict) else False,
+        }
+        span.set_attribute("cache_hits.news", cache_hits["news"])
+        span.set_attribute("cache_hits.weather", cache_hits["weather"])
+        span.set_attribute("cache_hits.fx", cache_hits["fx"])
 
         signal = {
             "topic": topic,
@@ -92,9 +94,8 @@ async def contextualize(
             "financial_context": fx,
             "tools_used": tools_used,
             "tools_skipped": tools_skipped,
+            "cache_hits": cache_hits,  # NEW (Day 9)
         }
-        span.set_attribute("tools_used", ",".join(tools_used))
-        span.set_attribute("news_headline_found", bool(signal.get("news_headline")))
 
         send_message({
             "sender": "contextualist",

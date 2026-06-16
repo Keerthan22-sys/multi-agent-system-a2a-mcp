@@ -2,12 +2,20 @@ import os
 import requests
 from fastmcp import FastMCP
 from dotenv import load_dotenv
+from synapse import cache
 
 load_dotenv()
 mcp = FastMCP("World Data Server")
 
 @mcp.tool
 def search_news(query: str) -> dict:
+    # NEW (Day 9): cache check
+    cache_params = {"query": query.lower().strip()}
+    cached = cache.get_cached("news", cache_params)
+    if cached:
+        cached["_cache_hit"] = True
+        return cached
+
     api_key = os.getenv("NEWSAPI_KEY")
     if not api_key:
         return {"error": "NEWSAPI_KEY not set in environment"}
@@ -34,22 +42,32 @@ def search_news(query: str) -> dict:
     articles = data.get("articles", [])
 
     if not articles:
-        return {"query": query, "articles": []}
+        result = {"query": query, "articles": []}
+    else:
+        article = articles[0]
+        result = {
+            "query": query,
+            "headline": article.get("title"),
+            "description": article.get("description"),
+            "source": article.get("source", {}).get("name"),
+            "url": article.get("url"),
+            "published_at": article.get("publishedAt"),
+        }
 
-    article = articles[0]
-    return {
-        "query": query,
-        "headline": article.get("title"),
-        "description": article.get("description"),
-        "source": article.get("source", {}).get("name"),
-        "url": article.get("url"),
-        "published_at": article.get("publishedAt")
-    }
+    cache.set_cached("news", cache_params, result, ttl_seconds=cache.TTL["news"])
+    result["_cache_hit"] = False
+    return result
 
 OPENWEATHER_API_URL = "https://api.openweathermap.org/data/2.5/weather"
 
 @mcp.tool
 def get_weather(city: str, units: str = "metric") -> dict:
+    cache_params = {"city": city.lower().strip(), "units": units}
+    cached = cache.get_cached("weather", cache_params)
+    if cached:
+        cached["_cache_hit"] = True
+        return cached
+
     weather_api_key = os.getenv("OPENWEATHER_API_KEY")
     if not weather_api_key:
         return {"error": "OPENWEATHER_API_KEY not set in environment"}
@@ -67,7 +85,7 @@ def get_weather(city: str, units: str = "metric") -> dict:
         response.raise_for_status()
         data = response.json()
 
-        return {
+        result = {
             "city": data.get("name"),
             "country": data.get("sys", {}).get("country"),
             "temperature": data.get("main", {}).get("temp"),
@@ -75,11 +93,15 @@ def get_weather(city: str, units: str = "metric") -> dict:
             "humidity": data.get("main", {}).get("humidity"),
             "description": data.get("weather", [{}])[0].get("description"),
             "wind_speed": data.get("wind", {}).get("speed"),
-            "units": "°C" if units == "metric" else "°F" if units == "imperial" else "K"
+            "units": "°C" if units == "metric" else "°F" if units == "imperial" else "K",
         }
 
     except requests.exceptions.RequestException as e:
         return {"error": f"API request failed: {str(e)}"}
+
+    cache.set_cached("weather", cache_params, result, ttl_seconds=cache.TTL["weather"])
+    result["_cache_hit"] = False
+    return result
 
 if __name__ == "__main__":
     mcp.run(transport="http", host="0.0.0.0", port=8001)

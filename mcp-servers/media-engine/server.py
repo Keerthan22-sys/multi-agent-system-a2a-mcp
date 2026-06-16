@@ -2,6 +2,7 @@ import os
 import requests
 from fastmcp import FastMCP
 from dotenv import load_dotenv
+from synapse import cache
 
 # Load environment variables from .env file
 load_dotenv()
@@ -17,11 +18,17 @@ PEXELS_SEARCH_URL = "https://api.pexels.com/v1/search"
 def search_images(query: str, per_page: int = 1) -> dict:
     """
     Search Pexels for high-quality images based on a query.
-    
+
     Args:
         query: The topic to search for images.
         per_page: Number of images to return.
     """
+    cache_params = {"query": query.lower().strip(), "per_page": per_page}
+    cached = cache.get_cached("media", cache_params)
+    if cached:
+        cached["_cache_hit"] = True
+        return cached
+
     # Read the Pexels API key from the environment
     api_key = os.getenv("PEXELS_API_KEY")
     if not api_key:
@@ -57,34 +64,38 @@ def search_images(query: str, per_page: int = 1) -> dict:
 
         photos = data.get("photos", [])
         if not photos:
-            return {
+            result = {
                 "query": query,
                 "images": [],
-                "message": "No images found."
+                "message": "No images found.",
             }
+        else:
+            # Format the response into a cleaner structure for agents
+            results = []
+            for photo in photos:
+                results.append({
+                    "id": photo.get("id"),
+                    "url": photo.get("url"),
+                    "photographer": photo.get("photographer"),
+                    "alt": photo.get("alt"),
+                    "src": {
+                        "url": photo.get("src", {}).get("large"),
+                        "type": "image",
+                    },
+                })
 
-        # Format the response into a cleaner structure for agents
-        results = []
-        for photo in photos:
-            results.append({
-                "id": photo.get("id"),
-                "url": photo.get("url"),
-                "photographer": photo.get("photographer"),
-                "alt": photo.get("alt"),
-                "src": {
-                    "url": photo.get("src", {}).get("large"),
-                    "type": "image"
-                }
-            })
-
-        return {
-            "query": query,
-            "images": results,
-            "total_results": data.get("total_results")
-        }
+            result = {
+                "query": query,
+                "images": results,
+                "total_results": data.get("total_results"),
+            }
 
     except requests.exceptions.RequestException as e:
         return {"error": f"Pexels API request failed: {str(e)}"}
+
+    cache.set_cached("media", cache_params, result, ttl_seconds=cache.TTL["media"])
+    result["_cache_hit"] = False
+    return result
 
 
 if __name__ == "__main__":
