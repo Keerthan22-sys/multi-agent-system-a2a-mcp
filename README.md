@@ -1,6 +1,6 @@
 # SYNAPSE — Multi-agent context-aware reports (A2A + MCP)
 
-This project wires several **FastMCP** servers together: lightweight "tool" servers (news, weather, FX, images, persistent memory, conversation state, an LLM-powered router, an evaluation engine, and a **self-critique loop**) feed **agents** that coordinate through a tiny file-based mailbox (**post office** under `synapse/protocol/`). A **Streamlit** UI triggers the Scout and Publisher tools to produce an article grounded in aggregated signals — with dynamic tool selection, intent-aware follow-up routing, end-to-end tracing via Arize Phoenix, LLM-as-judge evaluation, and an **automated draft → critique → revise cycle** that ships only publisher-approved briefs.
+This project wires several **FastMCP** servers together: lightweight "tool" servers (news, weather, FX, images, persistent memory, conversation state, an LLM-powered router, an evaluation engine, and a self-critique loop) feed **agents** that coordinate through a tiny file-based mailbox (**post office** under `synapse/protocol/`). A **Streamlit** UI triggers the Scout and Publisher tools to produce an article grounded in aggregated signals — with dynamic tool selection, intent-aware follow-up routing, end-to-end tracing via Arize Phoenix, LLM-as-judge evaluation, a draft → critique → revise cycle, and now **Redis-backed caching** and **per-run LLM cost tracking**.
 
 ## Architecture
 
@@ -21,6 +21,7 @@ flowchart LR
     SC[scout :8004]
     PUB[publisher :8005]
   end
+  REDIS[(Redis :6379)]
   UI[Streamlit ui/app.py]
   PO[(post_office.json)]
   PHX[(Phoenix :6006)]
@@ -41,94 +42,156 @@ flowchart LR
   CONV --> UI
   RT --> UI
   EV --> UI
+  WD -.cache.-> REDIS
+  FM -.cache.-> REDIS
+  ME -.cache.-> REDIS
+  RT -.cache.-> REDIS
+  UI -.cache.-> REDIS
   CTX -.traces.-> PHX
   SC -.traces.-> PHX
   PUB -.traces.-> PHX
-  MEM -.traces.-> PHX
-  CONV -.traces.-> PHX
   RT -.traces.-> PHX
   EV -.traces.-> PHX
   CR -.traces.-> PHX
   UI -.traces.-> PHX
 ```
 
-- **world-data** — NewsAPI headline search and OpenWeather current conditions.
-- **finance-monitor** — Resolves currency from location (REST Countries) and USD conversion rate (ExchangeRate-API).
-- **media-engine** — Pexels image search.
+- **world-data** — NewsAPI headline search and OpenWeather current conditions. Results cached in Redis.
+- **finance-monitor** — Currency resolution and USD conversion rate. Results cached in Redis.
+- **media-engine** — Pexels image search. Results cached in Redis.
 - **memory** — Persistent semantic store backed by ChromaDB.
 - **conversation** — Stores multi-turn conversation state in a JSON file.
-- **router** — LLM-powered routing: decides which tools to invoke per topic and classifies follow-up intent.
-- **eval** — LLM-as-judge evaluation engine. Scores briefs on five dimensions and stores run history.
-- **critic** — LLM editor that reviews each draft brief and returns an `approve` or `revise` decision with a list of specific, actionable issues.
-- **contextualist** — Calls world-data and finance-monitor based on routing flags; writes signal to the post office.
-- **scout** — Orchestrates contextualist, media-engine, and memory; passes routing-selected signals to the Publisher.
-- **publisher** — Runs the draft → critique → revise loop, then persists the approved brief and seeds the conversation.
+- **router** — LLM-powered routing: tool selection per topic (cached) and follow-up intent classification.
+- **eval** — LLM-as-judge evaluation engine.
+- **critic** — LLM editor for the draft → critique → revise loop.
+- **contextualist** — Calls world-data and finance-monitor based on routing flags.
+- **scout** — Orchestrates contextualist, media-engine, and memory.
+- **publisher** — Runs the draft → critique → revise loop; tracks and returns consolidated LLM cost.
 
-Root-level `server.py` and `agent.py` are commented FastMCP examples only; they are not part of the running stack.
+Root-level `server.py` and `agent.py` are commented FastMCP examples only.
 
 ## What's new in this branch
 
-### Critic MCP server (`mcp-servers/critic/`)
+### Redis-backed caching (`synapse/cache.py`)
 
-A new FastMCP server at port **8010** acts as an automated editor. It exposes one tool:
+A new `synapse/cache.py` module provides a simple, drop-in cache layer over Redis:
 
-**`review_brief(topic, article, source_payload)`** — reviews a draft brief against the source data and the required four-section structure (headline, body paragraphs, "Why it matters", "About the place of news"). Returns:
+```python
+from synapse.cache import get_cached, set_cached, TTL
+
+cached = get_cached("news", {"query": query})
+if cached:
+    cached["_cache_hit"] = True
+    return cached
+
+result = expensive_external_call()
+set_cached("news", {"query": query}, result, ttl_seconds=TTL["news"])
+result["_cache_hit"] = False
+return result
+```
+
+**Key properties:**
+- **Fail-safe** — if the `redis` package isn't installed or Redis is unreachable, `get_cached` returns `None` and `set_cached` returns `False`. The system runs without caching and nothing breaks.
+- **Deterministic keys** — cache key = `synapse:<namespace>:md5(sorted_json(params))[:16]`. Same inputs always hit the same key.
+- **Configurable endpoint** — `REDIS_URL` env var (default `redis://localhost:6379`).
+- **`_cache_hit` flag** — every cached response carries `_cache_hit: true/false` so the UI can surface it.
+- **`stats()`** helper returns Redis keyspace hits/misses, total keys, and memory usage.
+
+#### Default TTLs by data type
+
+| Namespace | TTL | Rationale |
+|-----------|-----|-----------|
+| `news` | 5 min | News churns fast |
+| `weather` | 10 min | Stable enough for a brief |
+| `fx` | 10 min | FX moves slowly |
+| `media` | 1 hour | Stock images don't change |
+| `router_tools` | 1 hour | Same topic → same routing decision |
+| `city` | 1 hour | Same topic → same capital |
+
+#### Instrumented services
+
+| Service | What's cached |
+|---------|---------------|
+| **world-data** | `search_news` by query, `get_weather` by city + units |
+| **finance-monitor** | `get_currency_code` and `get_fx_rate` by city |
+| **media-engine** | `search_images` by query + page size |
+| **router** | `route_tools` decisions by topic (`route_intent` is not cached — turns change) |
+| **ui** | `get_location_context` (city detection) by topic |
+
+### Token & cost tracking (`synapse/costs.py`)
+
+A new `synapse/costs.py` module normalizes token usage from both the Responses API (`input_tokens`/`output_tokens`) and Chat Completions API (`prompt_tokens`/`completion_tokens`) into a single shape and computes USD cost estimates:
+
+```python
+from synapse.costs import extract_usage, accumulate, format_cost_inr
+
+text, response = openai_call(prompt)
+usage = extract_usage(response, model="gpt-5-nano")
+# → {model, input_tokens, output_tokens, total_tokens, cost_usd}
+
+accumulate(total_usage, usage)
+print(format_cost_inr(total_usage["cost_usd"]))  # → "₹0.023"
+```
+
+#### Cost collection per brief
+
+The Publisher now accumulates usage from every LLM call it makes (initial draft, each revision, each critic call, and the router's decision that arrived via the payload) into a single `usage` object returned in the response:
 
 ```json
 {
-  "decision": "approve" | "revise",
-  "issues": ["<specific, actionable issue>", ...],
-  "reasoning": "<one sentence>"
+  "usage": {
+    "input_tokens": 4200, "output_tokens": 820,
+    "total_tokens": 5020, "cost_usd": 0.000549,
+    "calls": 3,
+    "by_source": {
+      "publisher": {...},
+      "critic": {...},
+      "router": {...}
+    }
+  }
 }
 ```
 
-Design principles:
-- **Conservative** — only requests revisions for concrete, fixable problems: hallucinated facts, missing sections, generic language where the source has specifics, internal contradictions.
-- **Ignores style** — word choice, section ordering, length within reason are not grounds for revision.
-- **Fail-safe** — if the LLM call fails or returns a contradictory response, the server defaults to `approve` so the pipeline never stalls.
-- Fully traced via `synapse.tracing`.
+Follow-up replies also return their own single-call `usage`.
 
-### Draft → critique → revise loop in the Publisher Agent
+#### Cost & cache panel in the Streamlit UI
 
-`publish_brief` now runs a multi-stage pipeline internally:
+After generating a brief, a **💰 Cost & Cache** section appears below the article with four metrics:
 
-1. **Initial draft** — LLM generates the brief from source data + memory context (unchanged).
-2. **Critique** — draft is sent to the Critic. If `approve`, the draft ships immediately.
-3. **Revision** — if `revise`, the Publisher calls the LLM again with a targeted revision prompt that quotes the specific issues and instructs it to fix only those without drifting from the source data.
-4. Loop repeats up to `MAX_REVISIONS` times (default **2**). If the budget is exhausted, the last draft ships regardless.
+| Metric | Detail |
+|--------|--------|
+| **Total cost** | In INR (hover for USD) |
+| **LLM calls** | Number of LLM round-trips for this brief |
+| **Total tokens** | Input + output across all calls |
+| **Cache hits** | `N/M` tool servers that returned cached data |
 
-**Critique loop is scoped to initial briefs only.** Follow-up conversational replies skip it by design — they're short, conversational, and should stay fast.
+An expandable detail panel shows a per-source breakdown (publisher, critic, router) and which tool servers hit/missed the cache.
 
-The full critique history (each round's decision, issues, reasoning, and a draft excerpt) is returned in the response payload and visible in the UI.
+#### INR conversion rate
 
-#### Environment controls
+Configurable via `SYNAPSE_USD_TO_INR` env var (default `84.0`).
 
-| Variable | Default | Effect |
-|----------|---------|--------|
-| `SYNAPSE_ENABLE_CRITIC` | `true` | Set to `false` to bypass the critique loop entirely. |
-| `SYNAPSE_MAX_REVISIONS` | `2` | Maximum revision rounds before shipping the last draft. |
+### Redis startup check in `start_backends.sh`
 
-### Critique observability in the Streamlit UI
+The startup script now checks whether Redis is reachable before launching services, and prints actionable instructions if it isn't (`brew services start redis` / `docker run -d -p 6379:6379 redis`). Cache unavailability is non-fatal — the system runs without it.
 
-After generating a brief, the pipeline status now shows:
-- `👀 Critic: approved on first draft.` or `👀 Critic: requested N revision(s); approved on attempt M.`
+### New dependency
 
-Below the article, a collapsible **"🧐 View critique history"** panel renders each round as an expander showing the critic's decision, reasoning, issues flagged, and a draft excerpt — so you can see exactly what changed between revisions.
+```text
+redis>=5.0
+```
 
-### Finance monitor defensive fix
-
-`mcp-servers/finance-monitor/server.py` — added a guard against the REST Countries API returning a non-list or empty response. Previously this caused an `IndexError`; now it falls back cleanly to USD with an informative error message.
+Added to `requirements.txt` and `pyproject.toml`.
 
 ---
 
 ## Prerequisites
 
 - **Python 3.10+** (tested on 3.13).
+- **Redis** (optional but recommended for caching). Install via `brew install redis`, `apt install redis-server`, or `docker run -d -p 6379:6379 redis`.
 - API keys from [OpenAI](https://platform.openai.com/), [NewsAPI](https://newsapi.org/register), [OpenWeatherMap](https://openweathermap.org/api), [ExchangeRate-API](https://www.exchangerate-api.com/), and [Pexels](https://www.pexels.com/api/).
 
 ## Setup
-
-Clone the repo, create a virtual environment, install dependencies, and install the local `synapse` package:
 
 ```bash
 cd multi-agent-system-a2a-mcp
@@ -140,11 +203,12 @@ pip install -r requirements.txt
 pip install -e .
 ```
 
-Configure secrets (never commit `.env`; it is listed in `.gitignore`):
+Configure secrets:
 
 ```bash
 cp .env.example .env
 # Edit .env and paste your keys.
+# Optional: REDIS_URL, SYNAPSE_USD_TO_INR
 ```
 
 ## How to run
@@ -152,11 +216,15 @@ cp .env.example .env
 ### Option A — Single shell (recommended)
 
 ```bash
+# Start Redis first (if not already running)
+brew services start redis   # macOS
+# or: docker run -d -p 6379:6379 redis
+
 chmod +x scripts/start_backends.sh
 ./scripts/start_backends.sh
 ```
 
-Starts Phoenix, all eight MCP servers, and three agents. Then in another terminal:
+Then in another terminal:
 
 ```bash
 source .venv/bin/activate
@@ -165,29 +233,24 @@ streamlit run ui/app.py
 
 Open **http://localhost:8501** for the app, **http://localhost:6006** for Phoenix traces.
 
-To disable the critique loop for a run:
-
-```bash
-SYNAPSE_ENABLE_CRITIC=false streamlit run ui/app.py
-```
-
 ### Option B — Separate terminals
 
 | Terminal | Command |
 |----------|---------|
-| 1 | `phoenix serve` |
-| 2 | `python mcp-servers/world-data/server.py` |
-| 3 | `python mcp-servers/finance-monitor/server.py` |
-| 4 | `python mcp-servers/media-engine/server.py` |
-| 5 | `python mcp-servers/memory/server.py` |
-| 6 | `python mcp-servers/conversation/server.py` |
-| 7 | `python mcp-servers/router/server.py` |
-| 8 | `python mcp-servers/eval/server.py` |
-| 9 | `python mcp-servers/critic/server.py` |
-| 10 | `python agents/contextualist_agent/main.py` |
-| 11 | `python agents/scout_agent/main.py` |
-| 12 | `python agents/publisher_agent/main.py` |
-| 13 | `streamlit run ui/app.py` |
+| 1 | `redis-server` (or start as a service) |
+| 2 | `phoenix serve` |
+| 3 | `python mcp-servers/world-data/server.py` |
+| 4 | `python mcp-servers/finance-monitor/server.py` |
+| 5 | `python mcp-servers/media-engine/server.py` |
+| 6 | `python mcp-servers/memory/server.py` |
+| 7 | `python mcp-servers/conversation/server.py` |
+| 8 | `python mcp-servers/router/server.py` |
+| 9 | `python mcp-servers/eval/server.py` |
+| 10 | `python mcp-servers/critic/server.py` |
+| 11 | `python agents/contextualist_agent/main.py` |
+| 12 | `python agents/scout_agent/main.py` |
+| 13 | `python agents/publisher_agent/main.py` |
+| 14 | `streamlit run ui/app.py` |
 
 ### Service ports
 
@@ -204,42 +267,43 @@ SYNAPSE_ENABLE_CRITIC=false streamlit run ui/app.py
 | Router | 8008 |
 | Eval | 8009 |
 | Critic | 8010 |
+| Redis | 6379 |
 | Phoenix UI + OTLP collector | 6006 |
 | Streamlit | 8501 (default) |
 
 ## Configuration notes
 
-- **Models:** All LLM calls (Publisher, Router, Critic, Eval judge) use `gpt-5-nano`. Change all call sites to a model you have access to if needed.
-- **Critic toggle:** `SYNAPSE_ENABLE_CRITIC=false` disables the critique loop. `SYNAPSE_MAX_REVISIONS=N` controls the revision budget (default 2).
-- **Post office:** `synapse/protocol/post_office.json` — scout clears it at the start of each run.
-- **Memory store:** ChromaDB under `synapse/memory_store/` (git-ignored).
-- **Conversation store:** `synapse/conversations/conversations.json` (git-ignored).
-- **Eval results:** `evals/results/runs.json` (git-ignored).
-- **Phoenix endpoint:** Override with `PHOENIX_COLLECTOR_ENDPOINT`. Tracing degrades to no-op if unavailable.
-- **Critic is optional:** If port 8010 is unreachable, the Publisher falls back to shipping the initial draft without critique.
+- **Redis URL:** `REDIS_URL` (default `redis://localhost:6379`). If unset or unreachable, all caching is silently disabled.
+- **INR rate:** `SYNAPSE_USD_TO_INR` (default `84.0`) for UI cost display.
+- **Critic toggle:** `SYNAPSE_ENABLE_CRITIC=false` disables the critique loop; `SYNAPSE_MAX_REVISIONS=N` sets the revision budget (default 2).
+- **Models:** All LLM calls use `gpt-5-nano`. Change all call sites if needed.
+- **Phoenix endpoint:** `PHOENIX_COLLECTOR_ENDPOINT` (default `http://localhost:6006`).
+- **Cache TTLs:** Edit `synapse/cache.py` `TTL` dict to adjust freshness per data type.
 
 ## Troubleshooting
 
-- **`ModuleNotFoundError: synapse`:** Run `pip install -e .` from the repository root.
-- **Critique never triggers / briefs skip revision:** Either the Critic server is down (fallback to approve) or `SYNAPSE_ENABLE_CRITIC=false`. Check the pipeline status panel in the UI.
-- **Brief generation is slower than before:** Each critique round adds one LLM call. With `MAX_REVISIONS=2` the worst case is 3 LLM calls (initial + 2 revisions). Set `SYNAPSE_ENABLE_CRITIC=false` to revert to single-call behavior.
+- **`ModuleNotFoundError: synapse`:** Run `pip install -e .` from the repo root.
+- **`[cache] Redis unreachable`:** Start Redis or set `REDIS_URL`. Cache disables gracefully; everything still works.
+- **Cost panel shows ₹0.00:** Either the LLM calls returned no usage metadata, or the brief was served entirely from cache.
+- **Cache hits always 0:** Redis isn't running, or this is the first run for these inputs. Run the same topic a second time to verify caching works.
 - **No spans in Phoenix:** Ensure `phoenix serve` started before the agents.
-- **Finance monitor returns USD fallback:** The REST Countries API returned an unexpected response for that city. The fallback is safe; the brief will note the currency as unavailable.
-- **Timeouts or empty context:** Confirm all ten MCP processes are listening and `.env` keys are valid.
+- **Timeouts or empty context:** Confirm all services are running and `.env` keys are valid.
 
 ## Project layout
 
 - `agents/` — Contextualist, Scout, Publisher FastMCP entrypoints.
-- `mcp-servers/` — Tool MCP servers: world-data, finance-monitor, media-engine, memory, conversation, router, eval, and **critic**.
-- `evals/dataset.json` — 20 curated evaluation topics with rubric hints.
+- `mcp-servers/` — world-data, finance-monitor, media-engine, memory, conversation, router, eval, critic.
+- `evals/dataset.json` — 20 curated evaluation topics.
 - `evals/run_eval.py` — CLI eval runner.
 - `evals/results/` — Persisted run JSON files (git-ignored).
-- `synapse/protocol/` — Post office helpers and persisted message file.
+- `synapse/cache.py` — **NEW:** Redis-backed cache with fail-safe no-op fallback.
+- `synapse/costs.py` — **NEW:** Token normalization and USD/INR cost estimation.
 - `synapse/tracing.py` — Centralized Phoenix/OpenTelemetry setup.
+- `synapse/protocol/` — Post office helpers and persisted message file.
 - `synapse/memory_store/` — ChromaDB vector store (git-ignored).
 - `synapse/conversations/` — Conversation thread JSON store (git-ignored).
-- `ui/app.py` — Main Streamlit app with critique history panel.
-- `ui/pages/1_📊_Evals.py` — Eval results dashboard page.
-- `diagnose_memory.py` — Dev utility for testing semantic search.
-- `diagnose_conversation.py` — Dev utility for testing the conversation server.
-- `diagnose_route.py` — Dev utility for testing routing decisions.
+- `ui/app.py` — Main Streamlit app with cost & cache panel.
+- `ui/pages/1_📊_Evals.py` — Eval results dashboard.
+- `diagnose_memory.py` — Dev utility for semantic search testing.
+- `diagnose_conversation.py` — Dev utility for conversation server testing.
+- `diagnose_route.py` — Dev utility for routing decisions testing.
