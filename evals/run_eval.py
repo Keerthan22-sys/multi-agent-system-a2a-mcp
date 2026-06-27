@@ -27,13 +27,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from fastmcp import Client
+from synapse.config import SCOUT_URL, PUBLISHER_URL, EVAL_URL
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_DATASET = REPO_ROOT / "evals" / "dataset.json"
-
-SCOUT_URL = "http://0.0.0.0:8004/mcp"
-PUBLISHER_URL = "http://0.0.0.0:8005/mcp"
-EVAL_URL = "http://0.0.0.0:8009/mcp"
 
 
 def _now_iso() -> str:

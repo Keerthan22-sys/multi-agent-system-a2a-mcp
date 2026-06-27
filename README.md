@@ -1,277 +1,230 @@
 # SYNAPSE — Multi-agent context-aware reports (A2A + MCP)
 
-This project wires several **FastMCP** servers together: lightweight "tool" servers (news, weather, FX, images, persistent memory, conversation state, an LLM-powered router, an evaluation engine, and a self-critique loop) feed **agents** that coordinate through a **Redis pub/sub message broker** (with a JSON-file fallback). A **Streamlit** UI triggers the Scout and Publisher tools to produce an article grounded in aggregated signals — with dynamic tool selection, intent-aware follow-up routing, end-to-end tracing via Arize Phoenix, LLM-as-judge evaluation, a draft → critique → revise cycle, Redis-backed caching, per-run LLM cost tracking, and now **real-time A2A messaging via Redis pub/sub**.
+This project wires several **FastMCP** servers together: lightweight "tool" servers (news, weather, FX, images, persistent memory, conversation state, an LLM-powered router, an evaluation engine, and a self-critique loop) feed **agents** that coordinate through a **Redis pub/sub message broker** (with a JSON-file fallback). A **Streamlit** UI triggers the Scout and Publisher tools to produce an article grounded in aggregated signals — with dynamic tool selection, intent-aware follow-up routing, end-to-end tracing via Arize Phoenix, LLM-as-judge evaluation, a draft → critique → revise cycle, Redis-backed caching, per-run LLM cost tracking, real-time A2A messaging via Redis pub/sub, and now a **full Docker Compose deployment** — spin the entire stack with one command.
 
 ## Architecture
 
 ```mermaid
-flowchart LR
-  subgraph tools [MCP tool servers]
-    WD[world-data :8001]
-    FM[finance-monitor :8002]
-    ME[media-engine :8003]
-    MEM[memory :8006]
-    CONV[conversation :8007]
-    RT[router :8008]
-    EV[eval :8009]
-    CR[critic :8010]
-  end
-  subgraph agents [Agents]
-    CTX[contextualist :8000]
-    SC[scout :8004]
-    PUB[publisher :8005]
-  end
-  REDIS[(Redis :6379\ncache + pub/sub)]
-  UI[Streamlit ui/app.py]
-  PHX[(Phoenix :6006)]
-  RT --> SC
-  WD --> CTX
-  FM --> CTX
-  CTX -->|publish| REDIS
-  REDIS -->|subscribe| SC
-  CTX --> SC
-  ME --> SC
-  MEM --> SC
-  SC --> PUB
-  CR --> PUB
-  PUB --> MEM
-  PUB --> CONV
-  PUB --> UI
-  MEM --> UI
-  CONV --> UI
-  RT --> UI
-  EV --> UI
-  WD -.cache.-> REDIS
-  FM -.cache.-> REDIS
-  ME -.cache.-> REDIS
-  RT -.cache.-> REDIS
-  UI -.cache.-> REDIS
-  CTX -.traces.-> PHX
-  SC -.traces.-> PHX
-  PUB -.traces.-> PHX
-  RT -.traces.-> PHX
-  EV -.traces.-> PHX
-  CR -.traces.-> PHX
-  UI -.traces.-> PHX
+graph TD
+    UI["🖥️ Streamlit UI\n(port 8501)"]
+
+    subgraph Agents
+        Scout["🔍 Scout Agent\n(port 8004)"]
+        Publisher["✍️ Publisher Agent\n(port 8005)"]
+        Contextualist["📡 Contextualist Agent\n(port 8000)"]
+    end
+
+    subgraph Tool MCP Servers
+        WorldData["🌍 World Data\n(port 8001)"]
+        Finance["💹 Finance Monitor\n(port 8002)"]
+        Media["🖼️ Media Engine\n(port 8003)"]
+        Memory["🧠 Memory\n(port 8006)"]
+        Conversation["💬 Conversation\n(port 8007)"]
+        Router["🔀 Router\n(port 8008)"]
+        Eval["📊 Eval Server\n(port 8009)"]
+        Critic["🔍 Critic\n(port 8010)"]
+    end
+
+    subgraph Infrastructure
+        Redis["⚡ Redis\n(port 6379)\ncache + pub/sub mailbox"]
+        Phoenix["🔭 Arize Phoenix\n(port 6006)\ntracing + observability"]
+        ChromaDB["🗄️ ChromaDB\n(persistent volume)"]
+    end
+
+    UI -->|"MCP calls"| Scout
+    UI -->|"MCP calls"| Publisher
+    Scout -->|"A2A pub/sub"| Redis
+    Redis -->|"A2A pub/sub"| Contextualist
+    Contextualist --> WorldData
+    Contextualist --> Finance
+    Scout --> Media
+    Scout --> Memory
+    Scout --> Router
+    Publisher --> Memory
+    Publisher --> Conversation
+    Publisher --> Critic
+    UI --> Memory
+    UI --> Conversation
+    UI --> Router
+    UI --> Eval
+    Memory --> ChromaDB
+    Redis -.->|"cache"| WorldData
+    Redis -.->|"cache"| Finance
+    Redis -.->|"cache"| Media
+    Redis -.->|"cache"| Router
 ```
 
-- **world-data** — NewsAPI headline search and OpenWeather current conditions. Results cached in Redis.
-- **finance-monitor** — Currency resolution and USD conversion rate. Results cached in Redis.
-- **media-engine** — Pexels image search. Results cached in Redis.
-- **memory** — Persistent semantic store backed by ChromaDB.
-- **conversation** — Stores multi-turn conversation state in a JSON file.
-- **router** — LLM-powered routing: tool selection per topic (cached) and follow-up intent classification.
-- **eval** — LLM-as-judge evaluation engine.
-- **critic** — LLM editor for the draft → critique → revise loop.
-- **contextualist** — Calls world-data and finance-monitor based on routing flags; publishes the signal to the Scout's Redis channel.
-- **scout** — Subscribes to `synapse:mailbox:scout` at startup; orchestrates contextualist, media-engine, and memory.
-- **publisher** — Runs the draft → critique → revise loop; tracks and returns consolidated LLM cost.
+## Services
 
-Root-level `server.py` and `agent.py` are commented FastMCP examples only.
+| Service | Port | Role |
+|---------|------|------|
+| Contextualist Agent | 8000 | Gathers weather, news, FX for a city; reached via Redis pub/sub |
+| World Data MCP | 8001 | Weather + news tools |
+| Finance Monitor MCP | 8002 | FX rates tool |
+| Media Engine MCP | 8003 | Pexels image search |
+| Scout Agent | 8004 | Orchestrates full brief pipeline; talks to Contextualist over Redis |
+| Publisher Agent | 8005 | Turns Scout output into polished article; runs self-critique loop |
+| Memory MCP | 8006 | ChromaDB semantic search — stores/retrieves past briefs |
+| Conversation MCP | 8007 | Multi-turn conversation state (JSON store) |
+| Router MCP | 8008 | LLM-powered tool selection + intent classification |
+| Eval Server MCP | 8009 | LLM-as-judge scoring (5-dimension rubric), run storage |
+| Critic MCP | 8010 | Draft review — approve or revise with issues list |
+| Redis | 6379 | Caching (TTL per data type) + A2A pub/sub mailbox |
+| Arize Phoenix | 6006 | Distributed tracing dashboard |
 
 ## What's new in this branch
 
-### Redis pub/sub message broker (`synapse/protocol/post_office.py`)
+### Docker Compose deployment (`docker-compose.yml`)
 
-The A2A mailbox has been upgraded from a shared JSON file to **Redis pub/sub**. The module keeps the exact same three-function API that the rest of the codebase has used since day one — no call-site changes in the agents:
-
-```python
-send_message(message)   # publish to recipient's Redis channel
-read_messages()         # drain this agent's in-process message buffer
-clear_messages()        # empty this agent's buffer
-```
-
-A new `init_mailbox(agent_name)` initializer must be called once at process startup for any agent that **reads** messages. It subscribes the process to `synapse:mailbox:<name>` and starts a background thread that pipes incoming Redis messages into a local buffer. The Contextualist (publish-only) does not need to call it.
-
-#### How it works
-
-- **Publish (`send_message`)** — serializes the message to JSON and calls `PUBLISH synapse:mailbox:<recipient>`.
-- **Subscribe (`init_mailbox`)** — creates a Redis `pubsub` object, subscribes to the agent's channel, and starts a daemon `Thread` that calls `_pubsub.listen()` in a loop, appending each message to a thread-safe `_message_buffer`.
-- **Read (`read_messages`)** — returns a snapshot of `_message_buffer` under a lock.
-- **Clear (`clear_messages`)** — empties `_message_buffer` under a lock.
-- **Faster polling** — `wait_for_response` in the Scout now polls at 200 ms instead of 500 ms; since Redis delivery is near-instant the response typically arrives on the first or second poll.
-
-#### Fail-safe file fallback
-
-If Redis is unreachable (connection refused, package not installed, or mid-run failure), the module automatically falls back to the original JSON-file behavior (`synapse/protocol/post_office.json`) — no code changes required anywhere. The fallback mode is logged on startup and surfaced in the UI.
-
-| Backend | When used |
-|---------|-----------|
-| `redis` | Redis reachable at `REDIS_URL` |
-| `file` | Redis unreachable — falls back to `post_office.json` |
-
-#### Observability
-
-Every `send_message`, `read_messages`, and `clear_messages` call is wrapped in an OpenTelemetry span (`post_office.send`, `post_office.read`, `post_office.clear`) with `backend`, `sender`, `recipient`, `task_id`, and `channel` attributes — visible in Phoenix.
-
-A `mode()` helper and a `stats()` dict expose the current backend, agent name, buffered message count, and channel name for the UI and debugging.
-
-### Mailbox status badge in the Streamlit UI
-
-The sidebar now shows the active mailbox backend:
-- `📬 Mailbox: Redis pub/sub (live)` when Redis is connected.
-- `📬 Mailbox: JSON file (Redis fallback)` when falling back to the file.
-
-### Mailbox watcher (`scripts/watch_mailbox.py`)
-
-A new developer utility that subscribes to every `synapse:mailbox:*` channel via Redis `PSUBSCRIBE` and pretty-prints each A2A message with ANSI colors as it arrives. Run it in a side terminal to watch the Contextualist → Scout handoff in real time:
+The entire SYNAPSE stack — 2 infrastructure containers, 8 tool MCP servers, 3 agents, and the Streamlit UI — runs with a single command:
 
 ```bash
-python scripts/watch_mailbox.py
+docker compose up --build
 ```
 
-Output example:
+Highlights:
+- **Single image, multiple containers** — one `Dockerfile` builds a `python:3.11-slim` image shared by all Python services. Each `docker-compose` service runs the same image with a different `command:`.
+- **Dependency graph** — Redis and Phoenix start first (with `healthcheck` conditions). Tool servers wait on healthy Redis/Phoenix. Agents wait on their tool servers. The UI waits on all agents.
+- **Named volumes** — `memory-store`, `conversations-data`, `eval-results`, and `phoenix-data` are mounted as Docker volumes so persistent data survives container restarts.
+- **Only 3 ports exposed externally**: `8501` (UI), `6006` (Phoenix), `6379` (Redis — kept open so `watch_mailbox.py` and `redis-cli` work from the host). All service-to-service traffic is internal Docker networking.
+- **`env_file: .env`** — all API keys come from your local `.env`. Docker Compose overrides `PHOENIX_COLLECTOR_ENDPOINT` and `REDIS_URL` (and service host vars) per container automatically.
+
+### Centralized service URL config (`synapse/config.py`)
+
+All service URLs now live in one place. Each host is read from an env var with `0.0.0.0` as the default:
+
+```python
+from synapse.config import SCOUT_URL, PUBLISHER_URL, MEMORY_URL
 ```
-📬 SYNAPSE mailbox watcher
-   Pattern: synapse:mailbox:*
-   Redis:   redis://localhost:6379
 
-[14:32:01.847] contextualist → scout (done, task=task-1)
-  channel: synapse:mailbox:scout
-  {
-    "topic": "Indian semiconductor manufacturing",
-    ...
-  }
-```
+- **Local dev** — no env vars set → `0.0.0.0` default → same behavior as before.
+- **Docker Compose** — sets `WORLD_DATA_HOST=world-data`, `FINANCE_HOST=finance-monitor`, etc. per service via `environment:`. Containers find each other by Docker service name.
+- **Kubernetes** (future) — set the same vars via ConfigMap, zero code changes.
 
-### Redis now serves two roles
+All agents (`scout`, `publisher`, `contextualist`) and `ui/app.py` now import URLs from `synapse.config` instead of hardcoding strings.
 
-From this branch onward, Redis is used for both:
-1. **Cache** (Day 9) — tool-server response caching with TTL.
-2. **Mailbox** (Day 10) — A2A pub/sub between the Contextualist and Scout.
+### `.env.example` updated
 
-The startup script reflects this and updated its Redis health-check message accordingly.
+Includes all service-host variables with comments explaining when to set them. Copy to `.env`, fill in API keys, and Docker Compose picks it up automatically.
 
----
+### `.dockerignore`
+
+Excludes `.venv/`, `__pycache__/`, `.git/`, `.env`, and local persistent-data directories (`synapse/memory_store/`, `synapse/conversations/`, `evals/results/`) from the build context — keeping the image lean and secrets out of layers.
 
 ## Prerequisites
 
-- **Python 3.10+** (tested on 3.13).
-- **Redis** (strongly recommended — both caching and pub/sub depend on it). Install via `brew install redis`, `apt install redis-server`, or `docker run -d -p 6379:6379 redis`.
-- API keys from [OpenAI](https://platform.openai.com/), [NewsAPI](https://newsapi.org/register), [OpenWeatherMap](https://openweathermap.org/api), [ExchangeRate-API](https://www.exchangerate-api.com/), and [Pexels](https://www.pexels.com/api/).
-
-## Setup
-
-```bash
-cd multi-agent-system-a2a-mcp
-python3 -m venv .venv
-source .venv/bin/activate   # Windows: .venv\Scripts\activate
-
-pip install --upgrade pip
-pip install -r requirements.txt
-pip install -e .
-```
-
-Configure secrets:
-
-```bash
-cp .env.example .env
-# Edit .env and paste your keys.
-# Optional: REDIS_URL (default redis://localhost:6379), SYNAPSE_USD_TO_INR
-```
+- Docker + Docker Compose (v2) — `docker compose version`
+- OR Python 3.11+ with a venv for local dev
+- API keys: OpenAI, NewsAPI, OpenWeather, ExchangeRate-API, Pexels
 
 ## How to run
 
-### Option A — Single shell (recommended)
+### Option A — Docker Compose (recommended)
 
 ```bash
-# Start Redis first
-brew services start redis       # macOS
-# or: docker run -d -p 6379:6379 redis
+cp .env.example .env
+# Fill in your API keys in .env
 
-chmod +x scripts/start_backends.sh
-./scripts/start_backends.sh
+docker compose up --build
 ```
 
-Then in another terminal:
+Wait for Phoenix and Redis health checks to pass (~15 s), then open `http://localhost:8501`.
+
+To tail logs for a single service:
+```bash
+docker compose logs -f scout
+```
+
+To watch the A2A mailbox from your host:
+```bash
+python scripts/watch_mailbox.py        # Redis still exposed on 6379
+```
+
+To run evals:
+```bash
+docker compose run --rm ui python evals/run_eval.py --limit 5
+```
+
+### Option B — Local Python (manual)
 
 ```bash
-source .venv/bin/activate
-streamlit run ui/app.py
+python -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt && pip install -e .
+
+# Terminal 1 — Redis
+redis-server
+# Terminal 2 — Phoenix (Docker or pip install arize-phoenix)
+python -m phoenix.server.main serve
+
+# Terminals 3-16 — one per service
+python mcp-servers/world-data/server.py
+python mcp-servers/finance-monitor/server.py
+# ... (see scripts/start_backends.sh for the full sequence)
 ```
 
-To watch A2A messages in real time (optional, third terminal):
+## Configuration
 
-```bash
-python scripts/watch_mailbox.py
-```
-
-Open **http://localhost:8501** for the app, **http://localhost:6006** for Phoenix traces.
-
-### Option B — Separate terminals
-
-| Terminal | Command |
-|----------|---------|
-| 1 | `redis-server` (or start as a service) |
-| 2 | `phoenix serve` |
-| 3 | `python mcp-servers/world-data/server.py` |
-| 4 | `python mcp-servers/finance-monitor/server.py` |
-| 5 | `python mcp-servers/media-engine/server.py` |
-| 6 | `python mcp-servers/memory/server.py` |
-| 7 | `python mcp-servers/conversation/server.py` |
-| 8 | `python mcp-servers/router/server.py` |
-| 9 | `python mcp-servers/eval/server.py` |
-| 10 | `python mcp-servers/critic/server.py` |
-| 11 | `python agents/contextualist_agent/main.py` |
-| 12 | `python agents/scout_agent/main.py` |
-| 13 | `python agents/publisher_agent/main.py` |
-| 14 | `streamlit run ui/app.py` |
-| *(opt)* | `python scripts/watch_mailbox.py` |
-
-### Service ports
-
-| Component | HTTP port |
-|-----------|-----------|
-| Contextualist | 8000 |
-| World data | 8001 |
-| Finance monitor | 8002 |
-| Media engine | 8003 |
-| Scout | 8004 |
-| Publisher | 8005 |
-| Memory | 8006 |
-| Conversation | 8007 |
-| Router | 8008 |
-| Eval | 8009 |
-| Critic | 8010 |
-| Redis | 6379 |
-| Phoenix UI + OTLP collector | 6006 |
-| Streamlit | 8501 (default) |
-
-## Configuration notes
-
-- **Redis URL:** `REDIS_URL` (default `redis://localhost:6379`). Used for both caching and the mailbox pub/sub channel.
-- **Mailbox fallback:** If Redis is unreachable, A2A messaging falls back to `synapse/protocol/post_office.json` — the system works, but without the speed or observability of Redis.
-- **INR rate:** `SYNAPSE_USD_TO_INR` (default `84.0`) for UI cost display.
-- **Critic toggle:** `SYNAPSE_ENABLE_CRITIC=false` / `SYNAPSE_MAX_REVISIONS=N`.
-- **Models:** All LLM calls use `gpt-5-nano`. Change all call sites if needed.
-- **Phoenix endpoint:** `PHOENIX_COLLECTOR_ENDPOINT` (default `http://localhost:6006`).
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `OPENAI_API_KEY` | — | Required |
+| `NEWS_API_KEY` | — | NewsAPI |
+| `OPENWEATHER_API_KEY` | — | OpenWeather |
+| `EXCHANGE_RATE_API_KEY` | — | FX rates |
+| `PEXELS_API_KEY` | — | Image search |
+| `REDIS_URL` | `redis://localhost:6379` | Cache + pub/sub (auto-overridden in Compose) |
+| `PHOENIX_COLLECTOR_ENDPOINT` | `http://localhost:6006` | Tracing (auto-overridden in Compose) |
+| `SYNAPSE_ENABLE_CRITIC` | `true` | Enable/disable self-critique loop |
+| `SYNAPSE_MAX_REVISIONS` | `2` | Max critique iterations |
+| `SYNAPSE_USD_TO_INR` | `84.0` | Cost display currency conversion |
+| `*_HOST` vars | `0.0.0.0` | Service host — set by Compose; leave unset for local dev |
 
 ## Troubleshooting
 
-- **`ModuleNotFoundError: synapse`:** Run `pip install -e .` from the repo root.
-- **`[post_office] Redis unavailable, falling back to file mode`:** Start Redis. The pipeline still works in file mode but A2A messages won't be visible in `watch_mailbox.py` or Phoenix pub/sub spans.
-- **Scout times out waiting for context:** In file mode, `wait_for_response` polls `post_office.json`. Ensure no stale messages from a previous run are blocking. Regenerating a brief clears the file.
-- **`watch_mailbox.py` shows no messages:** Redis must be running. Verify with `redis-cli ping`.
-- **Cache or mailbox unexpectedly in file mode mid-run:** Redis may have restarted. The post-office reconnects on the next `init_mailbox` call (i.e., next Scout process start).
-- **No spans in Phoenix:** Ensure `phoenix serve` started before the agents.
-- **Timeouts or empty context:** Confirm all services are running and `.env` keys are valid.
+| Symptom | Fix |
+|---------|-----|
+| UI container starts before Scout is ready | Run `docker compose up --build` again — services retry on startup |
+| `redis-cli` can't connect | Port 6379 is exposed; check `docker compose ps` for synapse-redis status |
+| Phoenix not receiving traces | Ensure Phoenix container passed its healthcheck: `docker compose ps phoenix` |
+| Memory store empty after restart | Check the `memory-store` volume: `docker volume inspect multi-agent-system-a2a-mcp_memory-store` |
+| Build fails on `requirements.txt not found` | Run `docker compose up --build` from the repo root (where `requirements.txt` lives) |
+| `OPENAI_API_KEY` not set | Copy `.env.example` → `.env` and fill in your keys before `docker compose up` |
 
 ## Project layout
 
-- `agents/` — Contextualist (publish-only), Scout (subscribes via `init_mailbox`), Publisher.
-- `mcp-servers/` — world-data, finance-monitor, media-engine, memory, conversation, router, eval, critic.
-- `evals/dataset.json` — 20 curated evaluation topics.
-- `evals/run_eval.py` — CLI eval runner.
-- `evals/results/` — Persisted run JSON files (git-ignored).
-- `synapse/cache.py` — Redis-backed cache with fail-safe no-op fallback.
-- `synapse/costs.py` — Token normalization and USD/INR cost estimation.
-- `synapse/tracing.py` — Centralized Phoenix/OpenTelemetry setup.
-- `synapse/protocol/post_office.py` — **Updated:** Redis pub/sub mailbox with JSON-file fallback.
-- `synapse/memory_store/` — ChromaDB vector store (git-ignored).
-- `synapse/conversations/` — Conversation thread JSON store (git-ignored).
-- `scripts/watch_mailbox.py` — **NEW:** Live-tail A2A messages from the Redis mailbox.
-- `ui/app.py` — Main Streamlit app with mailbox backend badge.
-- `ui/pages/1_📊_Evals.py` — Eval results dashboard.
-- `diagnose_memory.py` — Dev utility for semantic search testing.
-- `diagnose_conversation.py` — Dev utility for conversation server testing.
-- `diagnose_route.py` — Dev utility for routing decisions testing.
+```
+.
+├── dockerfile                    # Single image for all Python services
+├── docker-compose.yml            # Full stack — 16 services
+├── .dockerignore                 # Keeps secrets and local data out of the image
+├── .env.example                  # Copy to .env — all vars documented
+├── synapse/
+│   ├── config.py                 # Centralized URL resolver (env-var + port)
+│   ├── tracing.py                # OpenTelemetry / Phoenix setup
+│   ├── cache.py                  # Redis cache with TTL-per-namespace
+│   ├── costs.py                  # Token usage extraction + INR formatting
+│   └── protocol/
+│       └── post_office.py        # Redis pub/sub mailbox (JSON fallback)
+├── agents/
+│   ├── contextualist_agent/main.py
+│   ├── scout_agent/main.py
+│   └── publisher_agent/main.py
+├── mcp-servers/
+│   ├── world-data/server.py      # port 8001
+│   ├── finance-monitor/server.py # port 8002
+│   ├── media-engine/server.py    # port 8003
+│   ├── memory/server.py          # port 8006 — ChromaDB
+│   ├── conversation/server.py    # port 8007
+│   ├── router/server.py          # port 8008 — LLM routing
+│   ├── eval/server.py            # port 8009 — LLM-as-judge
+│   └── critic/server.py          # port 8010 — self-critique
+├── ui/
+│   ├── app.py                    # Streamlit main app (port 8501)
+│   └── pages/
+│       └── 1_📊_Evals.py
+├── evals/
+│   ├── dataset.json              # 20 curated eval topics
+│   └── run_eval.py               # CLI eval runner
+└── scripts/
+    ├── start_backends.sh         # Local dev helper
+    └── watch_mailbox.py          # Redis pub/sub mailbox live-tail
+```

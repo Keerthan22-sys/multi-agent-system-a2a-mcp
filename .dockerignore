@@ -1,0 +1,31 @@
+# .dockerignore — Day 11
+# Keep .venv, git history, and generated data out of the Docker build context.
+
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.git/
+.gitignore
+.github/
+
+# Local persistent data — mounted via volumes instead
+synapse/memory_store/
+synapse/conversations/
+synapse/protocol/post_office.json
+evals/results/
+
+# Local secrets — never bake into the image
+.env
+
+# Editor/OS noise
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Docker artifacts shouldn't include themselves
+Dockerfile
+docker-compose.yml
+.dockerignore

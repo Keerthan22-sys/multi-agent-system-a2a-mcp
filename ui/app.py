@@ -16,14 +16,12 @@ from synapse.costs import (
     extract_usage, empty_usage, accumulate, format_cost_inr, USD_TO_INR,
 )
 from synapse.protocol.post_office import mode as mailbox_mode
+from synapse.config import (
+    SCOUT_URL, PUBLISHER_URL, MEMORY_URL, CONVERSATION_URL, ROUTER_URL,
+)
 
 load_dotenv()
 
-SCOUT_URL = "http://0.0.0.0:8004/mcp"
-PUBLISHER_URL = "http://0.0.0.0:8005/mcp"
-MEMORY_URL = "http://0.0.0.0:8006/mcp"
-CONVERSATION_URL = "http://0.0.0.0:8007/mcp"
-ROUTER_URL = "http://0.0.0.0:8008/mcp"
 PHOENIX_UI_URL = os.getenv("PHOENIX_COLLECTOR_ENDPOINT", "http://localhost:6006")
 
 PIVOT_CONFIDENCE_THRESHOLD = 0.70

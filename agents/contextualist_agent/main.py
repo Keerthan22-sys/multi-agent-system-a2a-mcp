@@ -12,12 +12,9 @@ from fastmcp import FastMCP, Client
 from contextlib import AsyncExitStack
 
 from synapse.protocol.post_office import send_message
+from synapse.config import WORLD_DATA_URL, FINANCE_URL
 
 mcp = FastMCP("Contextualist Agent")
-
-WORLD_DATA_URL = "http://0.0.0.0:8001/mcp"
-FINANCE_URL = "http://0.0.0.0:8002/mcp"
-
 
 @mcp.tool
 async def contextualize(

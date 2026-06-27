@@ -1,0 +1,261 @@
+# docker-compose.yml — Day 11
+# One command spins the whole SYNAPSE stack:  docker compose up --build
+#
+# Service-to-service traffic uses Docker's internal network (services find each
+# other by name). Only three ports are exposed externally:
+#   8501 — Streamlit UI
+#   6006 — Phoenix observability
+#   6379 — Redis (so watch_mailbox.py / redis-cli still work from your host)
+
+services:
+
+  # ====================  INFRASTRUCTURE  ====================
+
+  redis:
+    image: redis:7-alpine
+    container_name: synapse-redis
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  phoenix:
+    image: arizephoenix/phoenix:latest
+    container_name: synapse-phoenix
+    ports:
+      - "6006:6006"
+    environment:
+      - PHOENIX_WORKING_DIR=/data
+    volumes:
+      - phoenix-data:/data
+    healthcheck:
+      test: ["CMD", "/usr/bin/python3.13", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:6006/')"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  # ====================  TOOL MCP SERVERS  ====================
+
+  world-data:
+    build: .
+    container_name: synapse-world-data
+    command: python mcp-servers/world-data/server.py
+    env_file: .env
+    environment:
+      - PHOENIX_COLLECTOR_ENDPOINT=http://phoenix:6006
+      - REDIS_URL=redis://redis:6379
+    depends_on:
+      redis:
+        condition: service_healthy
+      phoenix:
+        condition: service_healthy
+    restart: unless-stopped
+
+  finance-monitor:
+    build: .
+    container_name: synapse-finance
+    command: python mcp-servers/finance-monitor/server.py
+    env_file: .env
+    environment:
+      - PHOENIX_COLLECTOR_ENDPOINT=http://phoenix:6006
+      - REDIS_URL=redis://redis:6379
+    depends_on:
+      redis:
+        condition: service_healthy
+      phoenix:
+        condition: service_healthy
+    restart: unless-stopped
+
+  media-engine:
+    build: .
+    container_name: synapse-media
+    command: python mcp-servers/media-engine/server.py
+    env_file: .env
+    environment:
+      - PHOENIX_COLLECTOR_ENDPOINT=http://phoenix:6006
+      - REDIS_URL=redis://redis:6379
+    depends_on:
+      redis:
+        condition: service_healthy
+      phoenix:
+        condition: service_healthy
+    restart: unless-stopped
+
+  memory:
+    build: .
+    container_name: synapse-memory
+    command: python mcp-servers/memory/server.py
+    env_file: .env
+    environment:
+      - PHOENIX_COLLECTOR_ENDPOINT=http://phoenix:6006
+    volumes:
+      - memory-store:/app/synapse/memory_store
+    depends_on:
+      phoenix:
+        condition: service_healthy
+    restart: unless-stopped
+
+  conversation:
+    build: .
+    container_name: synapse-conversation
+    command: python mcp-servers/conversation/server.py
+    env_file: .env
+    environment:
+      - PHOENIX_COLLECTOR_ENDPOINT=http://phoenix:6006
+    volumes:
+      - conversations-data:/app/synapse/conversations
+    depends_on:
+      phoenix:
+        condition: service_healthy
+    restart: unless-stopped
+
+  router:
+    build: .
+    container_name: synapse-router
+    command: python mcp-servers/router/server.py
+    env_file: .env
+    environment:
+      - PHOENIX_COLLECTOR_ENDPOINT=http://phoenix:6006
+      - REDIS_URL=redis://redis:6379
+    depends_on:
+      redis:
+        condition: service_healthy
+      phoenix:
+        condition: service_healthy
+    restart: unless-stopped
+
+  eval-server:
+    build: .
+    container_name: synapse-eval
+    command: python mcp-servers/eval/server.py
+    env_file: .env
+    environment:
+      - PHOENIX_COLLECTOR_ENDPOINT=http://phoenix:6006
+    volumes:
+      - eval-results:/app/evals/results
+    depends_on:
+      phoenix:
+        condition: service_healthy
+    restart: unless-stopped
+
+  critic:
+    build: .
+    container_name: synapse-critic
+    command: python mcp-servers/critic/server.py
+    env_file: .env
+    environment:
+      - PHOENIX_COLLECTOR_ENDPOINT=http://phoenix:6006
+    depends_on:
+      phoenix:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # ====================  AGENT MCP SERVERS  ====================
+
+  contextualist:
+    build: .
+    container_name: synapse-contextualist
+    command: python agents/contextualist_agent/main.py
+    env_file: .env
+    environment:
+      - PHOENIX_COLLECTOR_ENDPOINT=http://phoenix:6006
+      - REDIS_URL=redis://redis:6379
+      - WORLD_DATA_HOST=world-data
+      - FINANCE_HOST=finance-monitor
+    depends_on:
+      redis:
+        condition: service_healthy
+      world-data:
+        condition: service_started
+      finance-monitor:
+        condition: service_started
+    restart: unless-stopped
+
+  scout:
+    build: .
+    container_name: synapse-scout
+    command: python agents/scout_agent/main.py
+    env_file: .env
+    environment:
+      - PHOENIX_COLLECTOR_ENDPOINT=http://phoenix:6006
+      - REDIS_URL=redis://redis:6379
+      - CONTEXTUALIST_HOST=contextualist
+      - MEDIA_HOST=media-engine
+      - MEMORY_HOST=memory
+      - ROUTER_HOST=router
+    depends_on:
+      redis:
+        condition: service_healthy
+      contextualist:
+        condition: service_started
+      media-engine:
+        condition: service_started
+      memory:
+        condition: service_started
+      router:
+        condition: service_started
+    restart: unless-stopped
+
+  publisher:
+    build: .
+    container_name: synapse-publisher
+    command: python agents/publisher_agent/main.py
+    env_file: .env
+    environment:
+      - PHOENIX_COLLECTOR_ENDPOINT=http://phoenix:6006
+      - MEMORY_HOST=memory
+      - CONVERSATION_HOST=conversation
+      - CRITIC_HOST=critic
+    depends_on:
+      memory:
+        condition: service_started
+      conversation:
+        condition: service_started
+      critic:
+        condition: service_started
+    restart: unless-stopped
+
+  # ====================  UI  ====================
+
+  ui:
+    build: .
+    container_name: synapse-ui
+    command: streamlit run ui/app.py --server.address=0.0.0.0 --server.port=8501
+    env_file: .env
+    environment:
+      - PHOENIX_COLLECTOR_ENDPOINT=http://phoenix:6006
+      - REDIS_URL=redis://redis:6379
+      - SCOUT_HOST=scout
+      - PUBLISHER_HOST=publisher
+      - MEMORY_HOST=memory
+      - CONVERSATION_HOST=conversation
+      - ROUTER_HOST=router
+      - EVAL_HOST=eval-server
+    ports:
+      - "8501:8501"
+    depends_on:
+      scout:
+        condition: service_started
+      publisher:
+        condition: service_started
+      memory:
+        condition: service_started
+      conversation:
+        condition: service_started
+      router:
+        condition: service_started
+      eval-server:
+        condition: service_started
+    restart: unless-stopped
+
+
+volumes:
+  phoenix-data:
+  memory-store:
+  conversations-data:
+  eval-results:
