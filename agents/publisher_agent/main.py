@@ -9,14 +9,12 @@ from fastmcp import Client, FastMCP
 from dotenv import load_dotenv
 
 from synapse.costs import extract_usage, empty_usage, accumulate
+from synapse.config import MEMORY_URL, CONVERSATION_URL, CRITIC_URL
 
 load_dotenv()
 
 mcp = FastMCP("Publisher Agent")
 
-MEMORY_URL = "http://0.0.0.0:8006/mcp"
-CONVERSATION_URL = "http://0.0.0.0:8007/mcp"
-CRITIC_URL = "http://0.0.0.0:8010/mcp"
 MAX_TURNS_IN_PROMPT = 10
 
 CRITIC_ENABLED = os.getenv("SYNAPSE_ENABLE_CRITIC", "true").lower() == "true"

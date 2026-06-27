@@ -11,14 +11,9 @@ from contextlib import AsyncExitStack
 from synapse.protocol.post_office import (
     send_message, read_messages, clear_messages, init_mailbox
 )
+from synapse.config import CONTEXTUALIST_URL, MEDIA_URL, MEMORY_URL, ROUTER_URL
 
 mcp = FastMCP("Scout Agent")
-
-CONTEXTUALIST_URL = "http://0.0.0.0:8000/mcp"
-MEDIA_URL = "http://0.0.0.0:8003/mcp"
-MEMORY_URL = "http://0.0.0.0:8006/mcp"
-ROUTER_URL = "http://0.0.0.0:8008/mcp"
-
 
 def wait_for_response(task_id: str, timeout: int = 10):
     """
