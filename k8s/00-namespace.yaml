@@ -1,0 +1,9 @@
+# k8s/00-namespace.yaml — Day 12
+# Everything SYNAPSE-related lives in this namespace.
+# Teardown is one command: kubectl delete namespace synapse
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: synapse
+  labels:
+    app: synapse

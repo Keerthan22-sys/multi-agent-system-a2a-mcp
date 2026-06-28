@@ -1,0 +1,37 @@
+# k8s/01-configmap.yaml — Day 12
+# Single source of truth for service-to-service addressing.
+# Mirrors the Rails project's database-configmap pattern: every deployment
+# pulls these in via envFrom, so changing a hostname here updates every
+# consumer without rebuilding any image.
+#
+# These values correspond exactly to the *_HOST env vars that
+# synapse/config.py already knows how to read (built in Day 11).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: synapse-config
+  namespace: synapse
+data:
+  # ---------- Tool MCP servers ----------
+  WORLD_DATA_HOST: "world-data-svc"
+  FINANCE_HOST: "finance-monitor-svc"
+  MEDIA_HOST: "media-engine-svc"
+  MEMORY_HOST: "memory-svc"
+  CONVERSATION_HOST: "conversation-svc"
+  ROUTER_HOST: "router-svc"
+  EVAL_HOST: "eval-server-svc"
+  CRITIC_HOST: "critic-svc"
+
+  # ---------- Agent MCP servers ----------
+  CONTEXTUALIST_HOST: "contextualist-svc"
+  SCOUT_HOST: "scout-svc"
+  PUBLISHER_HOST: "publisher-svc"
+
+  # ---------- Infrastructure ----------
+  REDIS_URL: "redis://redis-svc:6379"
+  PHOENIX_COLLECTOR_ENDPOINT: "http://phoenix-svc:6006"
+
+  # ---------- App-level tuning (Day 8/9 env vars) ----------
+  SYNAPSE_ENABLE_CRITIC: "true"
+  SYNAPSE_MAX_REVISIONS: "2"
+  SYNAPSE_USD_TO_INR: "84.0"

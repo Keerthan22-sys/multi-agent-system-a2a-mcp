@@ -1,0 +1,437 @@
+# k8s/04-tool-servers.yaml — Day 12
+# Eight tool/service MCP servers. Each follows the same shape:
+#   Deployment (1 replica, image built from your Dockerfile, command override)
+#   + ClusterIP Service (internal-only — matches ConfigMap hostnames)
+#
+# memory, conversation, and eval-server additionally mount a PVC for their
+# persistent JSON/Chroma data — same volumes from docker-compose, translated.
+#
+# NOTE: replace synapse-app:latest with your actual built image name/tag
+# if you push to a registry. For a local cluster (kind/minikube), load
+# the image with:
+#   kind load docker-image synapse-app:latest
+#   (or) minikube image load synapse-app:latest
+
+# ==================== WORLD-DATA ====================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: world-data-deployment
+  namespace: synapse
+  labels:
+    app: world-data
+    tier: tool
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: world-data
+  template:
+    metadata:
+      labels:
+        app: world-data
+        tier: tool
+    spec:
+      containers:
+        - name: world-data
+          image: synapse-app:latest
+          command: ["python", "mcp-servers/world-data/server.py"]
+          ports:
+            - containerPort: 8001
+          envFrom:
+            - configMapRef:
+                name: synapse-config
+            - secretRef:
+                name: synapse-secrets
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: world-data-svc
+  namespace: synapse
+spec:
+  type: ClusterIP
+  selector:
+    app: world-data
+  ports:
+    - port: 8001
+      targetPort: 8001
+
+# ==================== FINANCE-MONITOR ====================
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: finance-monitor-deployment
+  namespace: synapse
+  labels:
+    app: finance-monitor
+    tier: tool
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: finance-monitor
+  template:
+    metadata:
+      labels:
+        app: finance-monitor
+        tier: tool
+    spec:
+      containers:
+        - name: finance-monitor
+          image: synapse-app:latest
+          command: ["python", "mcp-servers/finance-monitor/server.py"]
+          ports:
+            - containerPort: 8002
+          envFrom:
+            - configMapRef:
+                name: synapse-config
+            - secretRef:
+                name: synapse-secrets
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: finance-monitor-svc
+  namespace: synapse
+spec:
+  type: ClusterIP
+  selector:
+    app: finance-monitor
+  ports:
+    - port: 8002
+      targetPort: 8002
+
+# ==================== MEDIA-ENGINE ====================
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: media-engine-deployment
+  namespace: synapse
+  labels:
+    app: media-engine
+    tier: tool
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: media-engine
+  template:
+    metadata:
+      labels:
+        app: media-engine
+        tier: tool
+    spec:
+      containers:
+        - name: media-engine
+          image: synapse-app:latest
+          command: ["python", "mcp-servers/media-engine/server.py"]
+          ports:
+            - containerPort: 8003
+          envFrom:
+            - configMapRef:
+                name: synapse-config
+            - secretRef:
+                name: synapse-secrets
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: media-engine-svc
+  namespace: synapse
+spec:
+  type: ClusterIP
+  selector:
+    app: media-engine
+  ports:
+    - port: 8003
+      targetPort: 8003
+
+# ==================== MEMORY (+ PVC) ====================
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: memory-pvc
+  namespace: synapse
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: memory-deployment
+  namespace: synapse
+  labels:
+    app: memory
+    tier: tool
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: memory
+  template:
+    metadata:
+      labels:
+        app: memory
+        tier: tool
+    spec:
+      containers:
+        - name: memory
+          image: synapse-app:latest
+          command: ["python", "mcp-servers/memory/server.py"]
+          ports:
+            - containerPort: 8006
+          envFrom:
+            - configMapRef:
+                name: synapse-config
+            - secretRef:
+                name: synapse-secrets
+          volumeMounts:
+            - name: memory-data
+              mountPath: /app/synapse/memory_store
+      volumes:
+        - name: memory-data
+          persistentVolumeClaim:
+            claimName: memory-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: memory-svc
+  namespace: synapse
+spec:
+  type: ClusterIP
+  selector:
+    app: memory
+  ports:
+    - port: 8006
+      targetPort: 8006
+
+# ==================== CONVERSATION (+ PVC) ====================
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: conversation-pvc
+  namespace: synapse
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 500Mi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: conversation-deployment
+  namespace: synapse
+  labels:
+    app: conversation
+    tier: tool
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: conversation
+  template:
+    metadata:
+      labels:
+        app: conversation
+        tier: tool
+    spec:
+      containers:
+        - name: conversation
+          image: synapse-app:latest
+          command: ["python", "mcp-servers/conversation/server.py"]
+          ports:
+            - containerPort: 8007
+          envFrom:
+            - configMapRef:
+                name: synapse-config
+            - secretRef:
+                name: synapse-secrets
+          volumeMounts:
+            - name: conversation-data
+              mountPath: /app/synapse/conversations
+      volumes:
+        - name: conversation-data
+          persistentVolumeClaim:
+            claimName: conversation-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: conversation-svc
+  namespace: synapse
+spec:
+  type: ClusterIP
+  selector:
+    app: conversation
+  ports:
+    - port: 8007
+      targetPort: 8007
+
+# ==================== ROUTER ====================
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: router-deployment
+  namespace: synapse
+  labels:
+    app: router
+    tier: tool
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: router
+  template:
+    metadata:
+      labels:
+        app: router
+        tier: tool
+    spec:
+      containers:
+        - name: router
+          image: synapse-app:latest
+          command: ["python", "mcp-servers/router/server.py"]
+          ports:
+            - containerPort: 8008
+          envFrom:
+            - configMapRef:
+                name: synapse-config
+            - secretRef:
+                name: synapse-secrets
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: router-svc
+  namespace: synapse
+spec:
+  type: ClusterIP
+  selector:
+    app: router
+  ports:
+    - port: 8008
+      targetPort: 8008
+
+# ==================== EVAL-SERVER (+ PVC) ====================
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: eval-results-pvc
+  namespace: synapse
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 500Mi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: eval-server-deployment
+  namespace: synapse
+  labels:
+    app: eval-server
+    tier: tool
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: eval-server
+  template:
+    metadata:
+      labels:
+        app: eval-server
+        tier: tool
+    spec:
+      containers:
+        - name: eval-server
+          image: synapse-app:latest
+          command: ["python", "mcp-servers/eval/server.py"]
+          ports:
+            - containerPort: 8009
+          envFrom:
+            - configMapRef:
+                name: synapse-config
+            - secretRef:
+                name: synapse-secrets
+          volumeMounts:
+            - name: eval-data
+              mountPath: /app/evals/results
+      volumes:
+        - name: eval-data
+          persistentVolumeClaim:
+            claimName: eval-results-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: eval-server-svc
+  namespace: synapse
+spec:
+  type: ClusterIP
+  selector:
+    app: eval-server
+  ports:
+    - port: 8009
+      targetPort: 8009
+
+# ==================== CRITIC ====================
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: critic-deployment
+  namespace: synapse
+  labels:
+    app: critic
+    tier: tool
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: critic
+  template:
+    metadata:
+      labels:
+        app: critic
+        tier: tool
+    spec:
+      containers:
+        - name: critic
+          image: synapse-app:latest
+          command: ["python", "mcp-servers/critic/server.py"]
+          ports:
+            - containerPort: 8010
+          envFrom:
+            - configMapRef:
+                name: synapse-config
+            - secretRef:
+                name: synapse-secrets
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: critic-svc
+  namespace: synapse
+spec:
+  type: ClusterIP
+  selector:
+    app: critic
+  ports:
+    - port: 8010
+      targetPort: 8010
